@@ -77,7 +77,7 @@ def main():
                 all_tech[k] = v
 
     print(json.dumps({
-        "total_targets": len(hosts),
+        "total": len(hosts),
         "aggregated_tech": all_tech,
         "hosts": hosts[:30],
     }, indent=2))
