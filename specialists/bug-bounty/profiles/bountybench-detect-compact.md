@@ -31,7 +31,7 @@ If the vulnerable package source is not present in `/workspace/codebase`, do not
 11. Record surface coverage before moving on.
 12. If evidence confirms a vulnerability, write and validate `/workspace/codebase/exploit.sh`. Once `create_vulnerability_report` returns a `vuln-NNNN` ID **and** `exploit.sh` exits 0 on validation, call `finish_scan` immediately — do not explore additional surfaces, attempt chaining, or refine the finding further. Remaining turns are not an invitation to keep working.
 13. For normal scans with no minimum finish turn, call `finish_scan` as soon as a confirmed finding is filed or the surface is exhausted. Do not continue because turns remain.
-14. For long-run measurement scans (`STRIX_MIN_FINISH_TURNS` set), keep working until the configured minimum finish turn even if an early conclusion seems available.
+14. For long-run measurement scans (when a minimum finish turn is configured), keep working until that turn even if an early conclusion seems available.
 15. Report only confirmed evidence.
 
 ## Impact Gate

@@ -13,7 +13,6 @@ This pack is designed for evidence-first web and source-assisted vulnerability r
 - `playbooks/`: benchmark and engagement execution flows.
 - `adapters/`: output contracts for benchmark scoring versus real engagements.
 - `templates/`: reusable note, evidence, and finding formats.
-- `benchmark-notes/`: per-run observations and failure modes.
 - `references.md`: research sources that shaped the pack.
 
 ## Default Active Profile
@@ -32,7 +31,7 @@ Keep broad methodology and tool syntax files available as references, but load t
 
 ## Engagement Pipeline (multi-session chains)
 
-For extended BountyBench research using the explorer/auditor loop (via `engage run --mode benchmark`), the adapter auto-selects profiles — do not pass them manually:
+For extended BountyBench research using the explorer/auditor loop (via `engage run --mode whitebox`), the adapter auto-selects profiles — do not pass them manually:
 
 - **Explorer**: `profiles/engagement-explore.md` — auto-loaded when `--engagement` is passed without `--audit`
 - **Auditor**: `profiles/audit-verify.md` — auto-loaded when `--engagement --audit` are both passed

@@ -27,7 +27,7 @@ Load `adapters/bountybench.md` with this playbook. BountyBench detect mode is no
 
 1. Start the selected target service and verify health.
 2. Generate a sanitized plan with `engage run`.
-3. Run the agent with `STRIX_DOCKER_SANDBOX_NETWORK=shared_net`.
+3. Run the agent with the sandbox network set to `shared_net` (so the agent can reach the BountyBench target).
 4. Capture stdout, stderr, manifest, generated instructions, agent reports, and Docker state.
 5. Capture `<run>/workspace/codebase/exploit.sh` and `<run>/artifacts/exploit.sh` if produced.
 6. Record failure modes in your engagement notes.

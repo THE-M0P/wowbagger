@@ -16,7 +16,7 @@ Use this pack only for authorized targets, local labs, BountyBench-style benchma
 
 **Engagement mode** (multi-session chain via `engage run`):
 
-The adapter manages profile loading automatically via `STRIX_COMPACT_ROOT_PROMPT_FILE`. Do not specify profiles manually:
+The adapter manages profile loading automatically. Do not specify profiles manually:
 
 - Explorer runs (`--engagement` without `--audit`): adapter loads `profiles/engagement-explore.md`
 - Auditor runs (`--engagement --audit`): adapter loads `profiles/audit-verify.md`

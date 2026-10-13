@@ -20,18 +20,18 @@ Chain started: YYYY-MM-DD
 <!--
 Example entry:
 
-### [verified: audit-1] Broken object-level authorization on GET /v1/runs/{id}/feedback
+### [verified: audit-1] Broken object-level authorization on GET /api/items/{id}/notes
 
-- **Route:** GET /v1/runs/{id}/feedback
-- **Attacker:** Unauthenticated network client who knows a run UUID
-- **Boundary crossed:** Project membership / org boundary
-- **Impact:** Anonymous caller reads project owner's private feedback (free-text comment, rating, score)
+- **Route:** GET /api/items/{id}/notes
+- **Attacker:** Authenticated user with no relationship to the target item
+- **Boundary crossed:** Item ownership / visibility boundary
+- **Impact:** Authenticated attacker reads notes attached to another user's private item
 - **Proof steps:**
-  1. Authenticate as owner: `POST /auth/login` → JWT
-  2. Write marker: `PATCH /v1/runs/{id}/feedback?projectId={pid}` -d '{"comment":"MARKER"}' → 200
-  3. Read unauthenticated: `GET /v1/runs/{id}/feedback` (no headers) → 200 with marker
-- **Negative control:** `GET /v1/runs/{unknown-id}/feedback` → 404
-- **Source:** `packages/backend/src/api/v1/runs/index.ts:1141` — no project/org predicate; `auth/utils.ts:89` — publicRoutes allowlist
+  1. Authenticate as owner (Account A): `POST /auth/login` → JWT
+  2. Create item with private note: `POST /api/items` body '{"visibility":"private","note":"MARKER"}' → item ID
+  3. Read notes as unrelated user (Account B): `GET /api/items/{id}/notes` with Account B token → 200 with "MARKER"
+- **Negative control:** `GET /api/items/{unknown-id}/notes` → 404
+- **Source:** `src/api/items/handler.js:87` — ownership check applied to item route but not notes sub-route
 - **Artifact:** run-001-explore/artifacts/exploit.sh (exits 0)
 - **Submitted to HackerOne:** no
 -->
@@ -48,9 +48,9 @@ Example entry:
 <!--
 Example entries:
 
-- [ruled-out] GET /v1/runs/{id} — scoped by orgId at line 849, cross-org access returns 401
+- [ruled-out] GET /api/items/{id} — scoped by ownerId predicate, cross-owner access returns 403
 - [ruled-out] JWT secret brute-force — secret is 64+ random bytes, not guessable
-- [ruled-out] Mass assignment on POST /v1/projects — extra fields ignored, no state change
+- [ruled-out] Mass assignment on POST /api/users — extra fields stripped by schema validator, no state change
 -->
 
 ---
@@ -66,12 +66,12 @@ Example entries:
 <!--
 Example entry:
 
-### [anomaly-active] 500 error on d.format column in datasets endpoint
+### [anomaly-active] 500 error on sort parameter in search endpoint
 
-- **Observed:** GET /v1/datasets?projectId=X returns 500 "column d.format does not exist"
-- **Tried:** run-001 — basic schema mismatch probe; run-002 — tried injecting via format param
-- **Needed to confirm:** whether format param is user-controlled and reaches a dangerous sink
-- **Source ref:** packages/backend/src/api/v1/datasets/index.ts:~120
+- **Observed:** GET /api/search?q=test&sort=invalid returns 500 "invalid sort column"
+- **Tried:** run-001 — basic schema mismatch probe; run-002 — tried injecting via sort param
+- **Needed to confirm:** whether sort param is user-controlled and reaches a dangerous SQL sink
+- **Source ref:** src/api/search/handler.js:~80
 - **Session count:** 2 sessions, still active
 -->
 
@@ -89,8 +89,8 @@ Example entry:
 <!--
 Example entries:
 
-- [lead] PATCH /v1/runs/:id/feedback (cross-org write) — handler reads existingFeedback by run ID only, no project predicate; check whether user B can overwrite user A's feedback (confirm: PATCH with B's token to A's run UUID, then GET feedback to see if marker persists)
-- [lead] Private-API-key branch sweep — authMiddleware skips ?projectId membership check on API-key paths; grep for other ctx.request.query.projectId usages on non-public routes beyond the one already confirmed
+- [lead] PATCH /api/items/:id/notes (cross-owner write) — handler looks up note by ID only, no owner predicate; check whether Account B can overwrite Account A's note (confirm: PATCH with B's token to A's note ID, then GET note to see if marker persists)
+- [lead] API-key auth bypass sweep — middleware skips ownership check on API-key paths; grep for other query param ownership checks applied inconsistently across public vs authenticated routes
 -->
 
 ---
