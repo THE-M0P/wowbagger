@@ -114,7 +114,7 @@ RUN apt-get update && \
 RUN go telemetry off
 
 RUN setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip $(which nmap)
-RUN setcap cap_sys_ptrace+eip $(which strace) $(which ltrace)
+RUN setcap cap_sys_ptrace+eip $(which strace) && setcap cap_sys_ptrace+eip $(which ltrace)
 
 USER pentester
 RUN go telemetry off
