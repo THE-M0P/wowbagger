@@ -91,7 +91,7 @@ engage run --mode target \
     --block-host out-of-scope.example.com
 ```
 
-`--inject-header` adds a header to every proxied request via Caido.
+`--inject-header` adds a header to every proxied HTTP request (useful for H1 attribution).
 `--block-host` null-routes a domain inside the sandbox so the agent can't reach it.
 
 ### Smoke test
@@ -106,11 +106,11 @@ engage smoke
 
 ## Specialist packs
 
-| Pack | Use case | Profiles |
-|------|----------|---------|
-| [`specialists/multi-specialist/`](specialists/multi-specialist/) | Whitebox · orchestration · smoke test | 9 explorers + 9 auditors + smoke-test |
-| [`specialists/bug-bounty-target/`](specialists/bug-bounty-target/) | Black-box live targets (H1, CTF, lab) | explorer + auditor |
-| [`specialists/bug-bounty/`](specialists/bug-bounty/) | Simple whitebox single-specialist runs | explorer + auditor |
+| Pack | Command | Use case | Profiles |
+|------|---------|----------|---------|
+| [`specialists/multi-specialist/`](specialists/multi-specialist/) | `engage orchestrate` | Whitebox · smoke test | 9 explorers + 9 auditors + smoke-test |
+| [`specialists/bug-bounty-target/`](specialists/bug-bounty-target/) | `engage run --mode target` | Black-box (H1, CTF, lab) | explorer + auditor |
+| [`specialists/bug-bounty/`](specialists/bug-bounty/) | `engage run --mode whitebox` | Single-specialist whitebox | explorer + auditor |
 
 Each specialist pack is a directory of Markdown profiles. Profiles are the only thing the agent sees — swap them to change behavior without touching any code.
 
