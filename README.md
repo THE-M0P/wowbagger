@@ -102,6 +102,33 @@ Verify the sandbox image has all tools working before a real run:
 engage smoke
 ```
 
+### Live run watcher
+
+Watch a running `engage orchestrate` or `engage run` in real time — context pressure, specialist history, coordinator picks, tool activity, and live findings:
+
+```bash
+engage watch ~/engagements/langfuse/chain-001
+```
+
+The dashboard polls every 2 seconds and renders without any extra dependencies:
+
+```
+┌─ WOWBAGGER  chain-001  run-003-explore             00:14:32 ─┐
+│ Specialist 3/9: auth-specialist  Turn 47/120  Context ████░ 78% │
+├─ COORDINATOR ─────────────────┬─ FINDINGS ───────────────────┤
+│ ✓ engagement-explore   12t    │ ● Confirmed  2               │
+│ ✓ recon-specialist      8t    │ ○ Anomalies  1               │
+│ → auth-specialist      47t    │ ◌ Leads      4               │
+├─────────────────── ACTIVITY ──────────────────────────────────┤
+│ T47  exec_command  curl -H "Authorization: Bearer ..." /api/…  │
+│       → 200 {"id":"proj_123","userId":"user_456"}              │
+│ T46  exec_command  rg "checkOwnership" src/api/traces.ts       │
+│       → 3 matches at lines 47, 89, 112                         │
+└───────────────────────────────────────────────────────────────┘
+```
+
+The context pressure bar turns **yellow** above 60% and **red** above 80% — a visual warning that the model's working memory is filling up.
+
 ---
 
 ## Specialist packs
@@ -140,11 +167,23 @@ Full config reference: [evals/README.md](evals/README.md)
 ```
 wowbagger/
   containers/      Kali-based Dockerfile + helper scripts (nmap-parse, ffuf-parse, …)
-  evals/           engage CLI — run / orchestrate / smoke
-  specialists/     specialist profile packs
+  evals/           engage CLI — run / orchestrate / smoke / watch
+  specialists/     specialist profile packs (multi-specialist / bug-bounty / bug-bounty-target)
   .github/
     workflows/
       docker-image.yml   builds and pushes to GHCR on containers/ changes
+```
+
+Outputs from every run land in the engagement directory you pass to `--engagement`:
+
+```
+~/engagements/example/chain-001/
+  run-001-explore/         explore pass (tool calls, strix.stdout.log, strix_runs/)
+  run-001-audit/           audit pass
+  run-002-explore/
+  …
+  master-report.md         live findings consolidated across all runs
+  chain-state.json         coordinator state (orchestrate only)
 ```
 
 ---

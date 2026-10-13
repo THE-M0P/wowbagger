@@ -78,7 +78,7 @@ engage smoke \
 > `cache_control_injection_points` TypeError.
 
 Exits 0 if everything passes. Look for `PASS — all tools verified` in the output.
-Report from the run lands in `~/wowbagger-runs/smoke/smoke-<timestamp>/smoke-report.md`.
+Report from the run lands in `~/strix-runs/smoke/smoke-<timestamp>/smoke-report.md`.
 
 Note: smoke auto-selects the `multi-specialist` pack (which contains `smoke-test.md`).
 You can override with `--specialist-pack <path>`.
@@ -116,6 +116,14 @@ engage orchestrate --mode whitebox \
   --rounds-per-specialist 5 \
   --llm anthropic/claude-sonnet-5-5
 ```
+
+**Watch a running engagement in a second terminal:**
+```bash
+engage watch ~/engagements/agentscope/chain-001
+```
+
+Shows context pressure, coordinator specialist picks, live findings count, and recent tool activity. Updates every 2 seconds. Press Ctrl-C to exit.
+
 
 ## Environment variables (alternative to config.toml)
 
