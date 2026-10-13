@@ -458,7 +458,7 @@ RUN mkdir -p /home/pentester/.jwt_tool && \
     printf '[crypto]\npubkey = /home/pentester/.jwt_tool/jwttool_custom_public_RSA.pem\nprivkey = /home/pentester/.jwt_tool/jwttool_custom_private_RSA.pem\necpubkey = /home/pentester/.jwt_tool/jwttool_custom_public_EC.pem\necprivkey = /home/pentester/.jwt_tool/jwttool_custom_private_EC.pem\njwks = /home/pentester/.jwt_tool/jwttool_custom_jwks.json\n\n[customising]\nuseragent = Mozilla/5.0 (Windows NT 10.0; Win64; x64) jwt_tool\njwks_kid = jwt_tool\n\n[services]\njwt_tool_version = 2.3.0\nproxy = 127.0.0.1:8080\nredir = True\njwksloc = \nhttplistener = \n\n[input]\nwordlist = jwt-common.txt\ncommonHeaders = common-headers.txt\ncommonPayloads = common-payloads.txt\n\n[argvals]\nsigType = \ntargetUrl = \nrate = 999999999\ncookies = \nkey = \nkeyList = \nkeyFile = \nheaderLoc = \npayloadclaim = \nheaderclaim = \npayloadvalue = \nheadervalue = \ncanaryvalue = \nheader = \nexploitType = \nscanMode = \nreqMode = \npostData = \nresCode = \nresSize = \nresContent = \noverridesub = false\n' \
         > /home/pentester/.jwt_tool/jwtconf.ini
 
-COPY --chown=pentester:pentester strix/tools/proxy/caido_api.py /opt/strix-python/caido_api.py
+COPY --chown=pentester:pentester containers/caido_api.py /opt/strix-python/caido_api.py
 ENV PYTHONPATH=/opt/strix-python
 
 # Login shells (e.g. `bash -lc`) source /etc/profile, which on Debian/Kali
