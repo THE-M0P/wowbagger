@@ -9,15 +9,15 @@ Modes:
 
 Usage:
   engage run --project lunary \\
-      --engagement ~/engagements/lunary/chain-002 \\
+      --engagement ~/strix-runs/engagements/lunary/chain-002 \\
       --rounds 5 --stop-on-dry-runs 2
 
   engage run --mode target --target https://app.example.com \\
       --instructions ~/programs/example/instructions.md \\
-      --engagement ~/engagements/example/chain-001 \\
+      --engagement ~/strix-runs/engagements/example/chain-001 \\
       --max-rounds 10 --stop-on-dry-runs 2
 
-See evals/README.md for full design.
+See docs/runbooks/engage-pipeline-plan.md for full design.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from wowbagger_evals.watch import run_watch
 from wowbagger_evals.bountybench import (
     BountyBenchError,
     build_plan,
@@ -525,7 +526,7 @@ def run_smoke(args: argparse.Namespace) -> int:
     run_dir = (
         args.output.expanduser().resolve()
         if args.output
-        else Path.home() / "wowbagger-runs" / "smoke" / f"smoke-{ts}"
+        else Path.home() / "strix-runs" / "smoke" / f"smoke-{ts}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1038,7 +1039,7 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
         action="append",
         dest="inject_headers",
         default=[],
-        help="inject a request header into every proxied request (repeatable, e.g. --inject-header 'X-hackerone:your-username')",
+        help="inject a request header into every proxied request (repeatable, e.g. --inject-header 'X-hackerone:the_mop')",
     )
     p.add_argument(
         "--block-host",
@@ -1056,7 +1057,7 @@ def _add_smoke_args(p: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         metavar="DIR",
-        help="directory for this run (default: ~/wowbagger-runs/smoke/smoke-<timestamp>)",
+        help="directory for this run (default: ~/strix-runs/smoke/smoke-<timestamp>)",
     )
     p.add_argument(
         "--max-turns",
@@ -1129,6 +1130,29 @@ def _add_orchestrate_args(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_watch_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "engagement",
+        type=Path,
+        metavar="ENGAGEMENT_DIR",
+        help="engagement directory to watch (the dir passed to --engagement)",
+    )
+    p.add_argument(
+        "--context-window",
+        type=int,
+        metavar="TOKENS",
+        default=_CONTEXT_WINDOW_DEFAULT,
+        help="context window token count for pressure display (default: from config)",
+    )
+    p.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        metavar="SECONDS",
+        help="polling interval in seconds (default: 2)",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="engage",
@@ -1138,18 +1162,18 @@ def build_parser() -> argparse.ArgumentParser:
 examples:
   # Single specialist chain (BountyBench):
   engage run --project lunary \\
-      --engagement ~/engagements/lunary/chain-002 \\
+      --engagement ~/strix-runs/engagements/lunary/chain-002 \\
       --rounds 5 --stop-on-dry-runs 2
 
   # Full multi-specialist orchestration (BountyBench):
   engage orchestrate --project agentscope \\
-      --engagement ~/engagements/agentscope/chain-001 \\
+      --engagement ~/strix-runs/engagements/agentscope/chain-001 \\
       --rounds-per-specialist 5 --llm anthropic/claude-sonnet-5-5
 
   # Live target (H1, CTF, lab):
   engage run --mode target --target https://app.example.com \\
       --instructions ~/programs/example/instructions.md \\
-      --engagement ~/engagements/example/chain-001
+      --engagement ~/strix-runs/engagements/example/chain-001
 """,
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1171,6 +1195,12 @@ examples:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     _add_smoke_args(smoke_p)
+    watch_p = sub.add_parser(
+        "watch",
+        help="live terminal dashboard for a running engage orchestrate/run",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _add_watch_args(watch_p)
     return parser
 
 
@@ -1210,6 +1240,9 @@ def main(argv: list[str] | None = None) -> int:
         except BountyBenchError as exc:
             print(f"engage: {exc}", file=sys.stderr)
             return 2
+
+    if args.command == "watch":
+        return run_watch(args)
 
     parser.error(f"unknown command: {args.command}")
     return 1
