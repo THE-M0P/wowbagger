@@ -1138,13 +1138,6 @@ def _add_watch_args(p: argparse.ArgumentParser) -> None:
         help="engagement directory to watch (the dir passed to --engagement)",
     )
     p.add_argument(
-        "--context-window",
-        type=int,
-        metavar="TOKENS",
-        default=_CONTEXT_WINDOW_DEFAULT,
-        help="context window token count for pressure display (default: from config)",
-    )
-    p.add_argument(
         "--interval",
         type=float,
         default=2.0,

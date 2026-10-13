@@ -72,6 +72,16 @@ def _truncate(text: str, maxlen: int) -> str:
     return text[: maxlen - 1] + "…"
 
 
+def _visible_len(s: str) -> int:
+    """Approximate visible character length, stripping ANSI escape sequences."""
+    return len(re.sub(r"\x1b\[[0-9;]*m", "", s))
+
+
+def _pad_to(text: str, width: int) -> str:
+    """Pad text to visible width, accounting for ANSI escape codes."""
+    return text + " " * max(0, width - _visible_len(text))
+
+
 # ---------------------------------------------------------------------------
 # Data collection
 # ---------------------------------------------------------------------------
@@ -146,24 +156,9 @@ def _load_chain_state(engagement_dir: Path) -> dict[str, Any]:
     return {}
 
 
-def _load_specialists_json(engagement_dir: Path) -> dict[str, Any]:
-    """Try to find specialists.json from any detected specialist pack path."""
-    # Look for specialist-pack symlink or try common locations
-    for candidate in [
-        engagement_dir / "specialists.json",
-    ]:
-        if candidate.is_file():
-            try:
-                return json.loads(candidate.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-    return {}
-
-
-def collect_state(engagement_dir: Path, context_window: int) -> dict[str, Any]:
+def collect_state(engagement_dir: Path) -> dict[str, Any]:
     state: dict[str, Any] = {
         "engagement_dir": engagement_dir,
-        "context_window": context_window,
         "chain_state": {},
         "turn": 0,
         "max_turns": None,
@@ -214,6 +209,15 @@ def collect_state(engagement_dir: Path, context_window: int) -> dict[str, Any]:
     scan_start = next((e for e in events if e.get("kind") == "scan_start"), None)
     if scan_start:
         state["max_turns"] = scan_start.get("max_turns")
+        # Fallback elapsed for engage run (no chain-state.json)
+        if not started_at_str:
+            ts = scan_start.get("ts")
+            if ts:
+                try:
+                    start = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    state["elapsed"] = int((datetime.now(timezone.utc) - start).total_seconds())
+                except ValueError:
+                    pass
 
     if llm_ends:
         last_end = llm_ends[-1]
@@ -228,9 +232,10 @@ def collect_state(engagement_dir: Path, context_window: int) -> dict[str, Any]:
         elif last_event.get("kind") == "scan_end":
             state["status"] = "done"
 
-    # Tool calls with turn numbers
+    # Tool calls with turn numbers — pending must be initialized before the loop
     tool_calls_with_turns: list[dict[str, Any]] = []
     cur_turn = 0
+    pending: dict[str, Any] | None = None
     for e in events:
         k = e.get("kind")
         if k == "llm_start":
@@ -324,37 +329,44 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
     right_w = inner - 1 - col_w
 
     def two_col(left: str, right: str) -> None:
-        lv = _visible_len(left)
-        rv = _visible_len(right)
-        left_padded  = left  + " " * max(0, col_w   - lv)
-        right_padded = right + " " * max(0, right_w - rv)
+        left_padded  = _pad_to(left,  col_w)
+        right_padded = _pad_to(right, right_w)
         lines.append("│" + left_padded + "│" + right_padded + "│")
+
+    def two_col_hline() -> None:
+        lines.append("├" + "─" * col_w + "┼" + "─" * right_w + "┤")
 
     # Section headers
     two_col(
         _c(" COORDINATOR", _BOLD),
         _c(" FINDINGS", _BOLD),
     )
-    two_col("─" * col_w, "─" * right_w)
+    two_col_hline()
 
-    # Build coordinator rows
+    # Build coordinator rows — use _pad_to for ANSI-safe column alignment
     coord_rows: list[str] = []
     for sp in exhausted:
-        t = rounds_by.get(sp, "?")
+        r = rounds_by.get(sp, "?")
         marker = _c("✓", _BGREEN)
-        coord_rows.append(f" {marker} {_truncate(sp, 18):<18} {t}t")
+        name_padded = _pad_to(_truncate(sp, 18), 18)
+        coord_rows.append(f" {marker} {name_padded} {r}r")
     if current:
         marker = _c("→", _BYELLOW)
-        coord_rows.append(f" {marker} {_c(_truncate(current, 18), _BOLD):<18} {turn}t")
+        name_colored = _c(_truncate(current, 18), _BOLD)
+        name_padded = _pad_to(name_colored, 18)
+        coord_rows.append(f" {marker} {name_padded} {turn}t")
 
-    # Build findings rows
+    # Build findings rows — color counts when non-zero
     conf = findings.get("confirmed", 0)
     anom = findings.get("anomaly", 0)
     lead = findings.get("lead", 0)
+    conf_str = _c(str(conf), _BRED)   if conf > 0 else _c(str(conf), _BOLD)
+    anom_str = _c(str(anom), _BYELLOW) if anom > 0 else _c(str(anom), _BOLD)
+    lead_str = _c(str(lead), _BOLD)
     find_rows = [
-        f" {_c('●', _BRED)} Confirmed  {_c(str(conf), _BOLD)}",
-        f" {_c('○', _BYELLOW)} Anomalies  {_c(str(anom), _BOLD)}",
-        f" {_c('◌', _DIM)} Leads      {_c(str(lead), _BOLD)}",
+        f" {_c('●', _BRED)} Confirmed  {conf_str}",
+        f" {_c('○', _BYELLOW)} Anomalies  {anom_str}",
+        f" {_c('◌', _DIM)} Leads      {lead_str}",
     ]
 
     n_rows = max(len(coord_rows), len(find_rows), 2)
@@ -405,11 +417,6 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
     return "\n".join(lines)
 
 
-def _visible_len(s: str) -> int:
-    """Approximate visible character length, stripping ANSI escape sequences."""
-    return len(re.sub(r"\x1b\[[0-9;]*m", "", s))
-
-
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
@@ -420,14 +427,13 @@ def run_watch(args: argparse.Namespace) -> int:
         print(f"engage watch: directory not found: {engagement_dir}", file=sys.stderr)
         return 2
 
-    context_window = getattr(args, "context_window", None) or 110080
     interval = getattr(args, "interval", 2)
 
     sys.stdout.write(HIDE_CURSOR)
     sys.stdout.flush()
     try:
         while True:
-            state = collect_state(engagement_dir, context_window)
+            state = collect_state(engagement_dir)
             width = shutil.get_terminal_size((100, 40)).columns
             out = CLEAR_SCREEN + render(state, width) + "\n"
             sys.stdout.write(out)
