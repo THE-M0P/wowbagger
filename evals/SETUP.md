@@ -78,7 +78,7 @@ engage smoke \
 > `cache_control_injection_points` TypeError.
 
 Exits 0 if everything passes. Look for `PASS — all tools verified` in the output.
-Report from the run lands in `~/strix-runs/smoke/smoke-<timestamp>/smoke-report.md`.
+Report from the run lands in `~/wowbagger-runs/smoke/smoke-<timestamp>/smoke-report.md`.
 
 Note: smoke auto-selects the `multi-specialist` pack (which contains `smoke-test.md`).
 You can override with `--specialist-pack <path>`.

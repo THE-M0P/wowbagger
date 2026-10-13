@@ -9,12 +9,12 @@ Modes:
 
 Usage:
   engage run --project lunary \\
-      --engagement ~/strix-runs/engagements/lunary/chain-002 \\
+      --engagement ~/wowbagger-runs/engagements/lunary/chain-002 \\
       --rounds 5 --stop-on-dry-runs 2
 
   engage run --mode target --target https://app.example.com \\
       --instructions ~/programs/example/instructions.md \\
-      --engagement ~/strix-runs/engagements/example/chain-001 \\
+      --engagement ~/wowbagger-runs/engagements/example/chain-001 \\
       --max-rounds 10 --stop-on-dry-runs 2
 
 See docs/runbooks/engage-pipeline-plan.md for full design.
@@ -526,7 +526,7 @@ def run_smoke(args: argparse.Namespace) -> int:
     run_dir = (
         args.output.expanduser().resolve()
         if args.output
-        else Path.home() / "strix-runs" / "smoke" / f"smoke-{ts}"
+        else Path.home() / "wowbagger-runs" / "smoke" / f"smoke-{ts}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1057,7 +1057,7 @@ def _add_smoke_args(p: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         metavar="DIR",
-        help="directory for this run (default: ~/strix-runs/smoke/smoke-<timestamp>)",
+        help="directory for this run (default: ~/wowbagger-runs/smoke/smoke-<timestamp>)",
     )
     p.add_argument(
         "--max-turns",
@@ -1162,18 +1162,18 @@ def build_parser() -> argparse.ArgumentParser:
 examples:
   # Single specialist chain (BountyBench):
   engage run --project lunary \\
-      --engagement ~/strix-runs/engagements/lunary/chain-002 \\
+      --engagement ~/wowbagger-runs/engagements/lunary/chain-002 \\
       --rounds 5 --stop-on-dry-runs 2
 
   # Full multi-specialist orchestration (BountyBench):
   engage orchestrate --project agentscope \\
-      --engagement ~/strix-runs/engagements/agentscope/chain-001 \\
+      --engagement ~/wowbagger-runs/engagements/agentscope/chain-001 \\
       --rounds-per-specialist 5 --llm anthropic/claude-sonnet-5-5
 
   # Live target (H1, CTF, lab):
   engage run --mode target --target https://app.example.com \\
       --instructions ~/programs/example/instructions.md \\
-      --engagement ~/strix-runs/engagements/example/chain-001
+      --engagement ~/wowbagger-runs/engagements/example/chain-001
 """,
     )
     sub = parser.add_subparsers(dest="command", required=True)
