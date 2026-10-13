@@ -331,7 +331,7 @@ echo "$TARGET" | kxss 2>/dev/null; ok "kxss (ran)"
 echo "127.0.0.1" | waybackurls 2>/dev/null; ok "waybackurls (ran)"
 
 # arjun
-arjun -u "$TARGET" --stable -q 2>/dev/null | head -5 && ok "arjun" || ok "arjun (ran)"
+timeout 60 arjun -u "$TARGET" -q 2>/dev/null | head -5 && ok "arjun" || ok "arjun (ran)"
 
 # dalfox
 dalfox url "$TARGET?q=test" --silence 2>/dev/null | head -3 && ok "dalfox"
@@ -371,11 +371,14 @@ gitleaks detect --source /tmp/smoke-src --no-banner 2>/dev/null; ok "gitleaks (r
 # retire.js
 cd /tmp/smoke-src && retire --outputformat json --outputpath /tmp/retire-live.json 2>/dev/null; ok "retire (ran)"
 
-# eslint + eslint-plugin-security
+# eslint v10 (flat config — --no-eslintrc/-c removed in v10)
+cat > /tmp/eslint.config.mjs << 'ESLINTEOF'
+export default [{ rules: { "no-eval": "error", "no-undef": "warn" } }];
+ESLINTEOF
 NODE_PATH=/home/pentester/.npm-global/lib/node_modules \
   npx --prefix /home/pentester/.npm-global eslint \
-  --no-eslintrc -c /tmp/.eslintrc.json \
-  --ext .js --format json /tmp/smoke-src 2>/dev/null | \
+  --config /tmp/eslint.config.mjs \
+  --format json /tmp/smoke-src/smoke.js 2>/dev/null | \
   python3 -c "import sys,json; d=json.load(sys.stdin); print('PASS eslint:', sum(len(f.get(\"messages\",[])) for f in d), 'messages')" 2>/dev/null || ok "eslint (ran)"
 
 # js-beautify
@@ -411,7 +414,7 @@ BINARY=/tmp/smoke-bin
 checksec --file="$BINARY" 2>/dev/null | head -5 && ok "checksec" || fail "checksec" "non-zero exit"
 
 # r2 — analyze and list functions
-r2 -A "$BINARY" -q -c 'aflj' 2>/dev/null | python3 -c "
+r2 -A -q -c 'aflj' "$BINARY" 2>/dev/null | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read() or '[]')
 n = len(data)
