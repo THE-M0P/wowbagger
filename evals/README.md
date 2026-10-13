@@ -32,7 +32,7 @@ pip install -e ~/src/wowbagger/evals/
 **4. Configure**
 ```bash
 cp ~/src/wowbagger/evals/config.example.toml ~/.config/wowbagger-evals/config.toml
-# Edit: set specialist_pack = "~/src/wowbagger/specialists/bug-bounty-cve"
+# Edit: set specialist_pack = "~/src/wowbagger/specialists/multi-specialist"
 #       set sandbox_image = "wowbagger-sandbox:local"
 ```
 
@@ -118,7 +118,7 @@ wowbagger/
     SETUP.md
   specialists/           ← specialist packs
     bug-bounty/          ← whitebox mode (BountyBench)
-    bug-bounty-cve/      ← orchestrate + smoke (9 explorers, 9 auditors)
+    multi-specialist/    ← orchestrate + smoke (9 explorers, 9 auditors)
     bug-bounty-target/   ← target mode (H1, CTF, lab)
   .github/
     workflows/

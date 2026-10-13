@@ -1077,7 +1077,7 @@ def _add_smoke_args(p: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         metavar="DIR",
-        help="specialist pack containing smoke-test.md (default: bug-bounty-cve pack)",
+        help="specialist pack containing smoke-test.md (default: multi-specialist pack)",
     )
     p.add_argument("--sandbox-network", metavar="NETWORK", help="Docker network for strix sandbox")
     p.add_argument(

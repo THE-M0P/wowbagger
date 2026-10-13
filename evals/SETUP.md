@@ -48,7 +48,7 @@ cp ~/src/wowbagger/evals/config.example.toml ~/.config/wowbagger-evals/config.to
 Edit `~/.config/wowbagger-evals/config.toml` — fill in at minimum:
 
 ```toml
-specialist_pack = "~/src/wowbagger/specialists/bug-bounty-cve"
+specialist_pack = "~/src/wowbagger/specialists/multi-specialist"
 sandbox_image   = "wowbagger-sandbox:local"   # or ghcr.io/THE-M0P/wowbagger:latest
 ```
 
@@ -80,7 +80,7 @@ engage smoke \
 Exits 0 if everything passes. Look for `PASS — all tools verified` in the output.
 Report from the run lands in `~/wowbagger-runs/smoke/smoke-<timestamp>/smoke-report.md`.
 
-Note: smoke auto-selects the `bug-bounty-cve` pack (which contains `smoke-test.md`).
+Note: smoke auto-selects the `multi-specialist` pack (which contains `smoke-test.md`).
 You can override with `--specialist-pack <path>`.
 
 ## Running your first engagement

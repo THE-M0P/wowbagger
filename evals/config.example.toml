@@ -12,12 +12,12 @@
 
 # Path to your CVE/BountyBench specialist pack (whitebox mode default).
 # Env var: ENGAGE_SPECIALIST_PACK
-# specialist_pack = "~/src/wowbagger/specialists/bug-bounty-cve"
+# specialist_pack = "~/src/wowbagger/specialists/multi-specialist"
 
 # Path to your smoke-test specialist pack — must contain profiles/smoke-test.md.
 # Defaults to specialist_pack above. Only set this if your default pack lacks smoke-test.md.
 # Env var: ENGAGE_SMOKE_SPECIALIST_PACK
-# smoke_specialist_pack = "~/src/wowbagger/specialists/bug-bounty-cve"
+# smoke_specialist_pack = "~/src/wowbagger/specialists/multi-specialist"
 
 # Path to your target specialist pack (required for --mode target).
 # Also accepted as ENGAGE_H1_SPECIALIST_PACK / h1_specialist_pack for backwards compatibility.

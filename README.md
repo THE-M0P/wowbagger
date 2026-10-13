@@ -108,7 +108,7 @@ engage smoke
 
 | Pack | Use case | Profiles |
 |------|----------|---------|
-| [`specialists/bug-bounty-cve/`](specialists/bug-bounty-cve/) | Whitebox · orchestration · smoke test | 9 explorers + 9 auditors + smoke-test |
+| [`specialists/multi-specialist/`](specialists/multi-specialist/) | Whitebox · orchestration · smoke test | 9 explorers + 9 auditors + smoke-test |
 | [`specialists/bug-bounty-target/`](specialists/bug-bounty-target/) | Black-box live targets (H1, CTF, lab) | explorer + auditor |
 | [`specialists/bug-bounty/`](specialists/bug-bounty/) | Simple whitebox single-specialist runs | explorer + auditor |
 
@@ -125,7 +125,7 @@ The LLM, API base, context window, and specialist pack paths can all be set ther
 ```toml
 llm             = "anthropic/claude-sonnet-5-5"
 sandbox_image   = "ghcr.io/THE-M0P/wowbagger:latest"
-specialist_pack = "~/src/wowbagger/specialists/bug-bounty-cve"
+specialist_pack = "~/src/wowbagger/specialists/multi-specialist"
 ```
 
 > **Note for Claude models:** always use the `anthropic/` prefix (e.g. `anthropic/claude-sonnet-5-5`).
