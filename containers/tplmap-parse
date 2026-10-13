@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""tplmap-parse — compact JSON summary from tplmap SSTI scanner output.
+
+tplmap has no native JSON output. This parser reads its stdout/stderr text
+and extracts injection findings, detected engine, and payload metadata.
+
+Usage:
+  tplmap -u 'http://target/?name=*' 2>&1 | tee /tmp/tplmap.txt
+  tplmap-parse /tmp/tplmap.txt
+
+  # Or pipe directly:
+  tplmap -u 'http://target/?name=*' 2>&1 | tplmap-parse -
+"""
+import sys, json, re
+
+# tplmap output patterns
+ENGINE_RE   = re.compile(r'\[.\]\s+(.+?)\s+(?:template injection|engine detected|is vulnerable)', re.IGNORECASE)
+PARAM_RE    = re.compile(r'Injection\s+point:\s+(.+)', re.IGNORECASE)
+OS_RE       = re.compile(r'OS:\s+(.+)', re.IGNORECASE)
+HOSTNAME_RE = re.compile(r'Hostname:\s+(.+)', re.IGNORECASE)
+RCE_RE      = re.compile(r'\[.\]\s+Injecting\s+payload\s+(.+)', re.IGNORECASE)
+VULN_RE     = re.compile(r'\[.\]\s+(.+?)\s+is\s+vulnerable', re.IGNORECASE)
+SHELL_RE    = re.compile(r'\[.\]\s+(?:Remote code|Code execution|Shell)', re.IGNORECASE)
+URL_RE      = re.compile(r'\[.\]\s+(?:Testing|Target):\s+(https?://\S+)', re.IGNORECASE)
+FAILED_RE   = re.compile(r'(?:not injectable|no injection|parameter not found|failed)', re.IGNORECASE)
+
+def main():
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    if src == "-":
+        raw = sys.stdin.read()
+    else:
+        with open(src) as f:
+            raw = f.read()
+
+    lines = raw.splitlines()
+
+    engines = []
+    params  = []
+    os_info = []
+    hostname = ""
+    rce_payloads = []
+    has_shell = False
+    url = ""
+    failed = False
+
+    for line in lines:
+        if m := ENGINE_RE.search(line):
+            engines.append(m.group(1).strip())
+        if m := PARAM_RE.search(line):
+            params.append(m.group(1).strip())
+        if m := OS_RE.search(line):
+            os_info.append(m.group(1).strip())
+        if m := HOSTNAME_RE.search(line):
+            hostname = m.group(1).strip()
+        if m := RCE_RE.search(line):
+            rce_payloads.append(m.group(1).strip()[:100])
+        if SHELL_RE.search(line):
+            has_shell = True
+        if m := URL_RE.search(line):
+            url = m.group(1)
+        if FAILED_RE.search(line):
+            failed = True
+        # Also catch VULN pattern
+        if m := VULN_RE.search(line):
+            engines.append(m.group(1).strip())
+
+    engines = list(dict.fromkeys(engines))  # deduplicate
+    params  = list(dict.fromkeys(params))
+    os_info = list(dict.fromkeys(os_info))
+
+    vulnerable = bool(engines) and not failed
+
+    print(json.dumps({
+        "vulnerable":    vulnerable,
+        "url":           url,
+        "engines":       engines,
+        "parameters":    params,
+        "rce_capable":   has_shell or bool(rce_payloads),
+        "os":            os_info[:3],
+        "hostname":      hostname,
+        "rce_payloads":  rce_payloads[:5],
+        "raw_lines":     len(lines),
+        "note": "If vulnerable=false but output is ambiguous, review raw output",
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

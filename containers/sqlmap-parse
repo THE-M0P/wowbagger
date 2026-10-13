@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""sqlmap-parse — condense sqlmap text output to a compact JSON summary.
+
+Usage:
+  sqlmap -u "http://target/path?id=1" --batch --output-dir /tmp/sqlmap-out 2>&1 | tee /tmp/sqlmap.txt
+  sqlmap-parse /tmp/sqlmap.txt
+
+  or pipe:  sqlmap ... 2>&1 | sqlmap-parse
+"""
+import sys, re, json
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    if path in ("-h", "--help", None) and sys.stdin.isatty():
+        print(__doc__); sys.exit(0)
+
+    text = sys.stdin.read() if path in ("-", None) else open(path).read()
+
+    target = ""
+    t = re.search(r"testing URL '([^']+)'", text)
+    if t:
+        target = t.group(1)
+
+    injections = []
+    # Each injection block starts with "Parameter: " line
+    for block in re.split(r"\n(?=Parameter: )", text):
+        param_m = re.search(r"^Parameter: (.+)", block, re.MULTILINE)
+        if not param_m:
+            continue
+        param = param_m.group(1).strip()
+        for inj in re.finditer(
+            r"Type: (.+?)\n.*?Title: (.+?)\n.*?Payload: (.+?)(?:\n|$)",
+            block, re.DOTALL
+        ):
+            injections.append({
+                "parameter": param,
+                "type":      inj.group(1).strip(),
+                "title":     inj.group(2).strip(),
+                "payload":   inj.group(3).strip()[:200],
+            })
+
+    db_banner = ""
+    b = re.search(r"back-end DBMS: (.+)", text)
+    if b:
+        db_banner = b.group(1).strip()
+
+    current_db = ""
+    c = re.search(r"current database(?:[^:]*): '?([^'\n]+)'?", text, re.IGNORECASE)
+    if c:
+        current_db = c.group(1).strip()
+
+    tables = re.findall(r"^\| (\w+)\s*\|", text, re.MULTILINE)
+
+    errors = []
+    for m in re.finditer(r"\[WARNING\] (.+)", text):
+        msg = m.group(1).strip()
+        if "not injectable" in msg or "might not be injectable" in msg:
+            errors.append(msg)
+
+    vulnerable = len(injections) > 0
+    print(json.dumps({
+        "target":      target,
+        "vulnerable":  vulnerable,
+        "dbms":        db_banner,
+        "current_db":  current_db,
+        "tables_seen": list(set(tables))[:20],
+        "injections":  injections,
+        "warnings":    errors[:5],
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""nuclei-parse — condense nuclei -j output to a compact JSON summary.
+
+Usage:
+  nuclei -u http://target -t templates/ -j -o /tmp/nuclei.jsonl
+  nuclei-parse /tmp/nuclei.jsonl
+
+  or pipe:  nuclei ... -j | nuclei-parse
+"""
+import sys, json
+
+def load(path):
+    src = sys.stdin if path in ("-", None) else open(path)
+    lines = []
+    for line in src:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            lines.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    return lines
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    if path and path in ("-h", "--help"):
+        print(__doc__); sys.exit(0)
+
+    items = load(path)
+    by_sev = {}
+    for item in items:
+        sev = (item.get("info", {}).get("severity") or item.get("severity") or "unknown").lower()
+        by_sev.setdefault(sev, []).append({
+            "template": item.get("template-id") or item.get("templateID", ""),
+            "name":     item.get("info", {}).get("name") or item.get("name", ""),
+            "host":     item.get("host", ""),
+            "matched":  item.get("matched-at") or item.get("matched", ""),
+            "tags":     item.get("info", {}).get("tags", []),
+        })
+
+    order = ["critical", "high", "medium", "low", "info", "unknown"]
+    sorted_findings = {k: by_sev[k] for k in order if k in by_sev}
+
+    counts = {k: len(v) for k, v in sorted_findings.items()}
+    total = sum(counts.values())
+
+    print(json.dumps({
+        "total": total,
+        "counts": counts,
+        "findings": sorted_findings,
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

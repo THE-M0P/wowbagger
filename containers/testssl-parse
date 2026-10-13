@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""testssl-parse — compact JSON summary from testssl.sh output.
+
+Reads testssl JSON written with --jsonfile /tmp/testssl.json.
+Output is a flat array: [{id, ip, port, severity, finding}, ...].
+Groups by severity; surfaces HIGH/CRITICAL findings prominently.
+
+Usage:
+  testssl.sh --jsonfile /tmp/testssl.json https://target.com/
+  testssl-parse /tmp/testssl.json
+"""
+import sys, json
+
+SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4, "OK": 5, "DEBUG": 6}
+HIGHLIGHT_IDS = {
+    "heartbleed", "ccs", "ticketbleed", "robot", "logjam", "drown",
+    "poodle_ssl", "sweet32", "crime", "breach", "rc4", "beast",
+    "lucky13", "freak", "ssl2", "ssl3", "tls1", "tls1_1",
+    "cert_expired", "cert_notyet", "cert_chain_of_trust",
+}
+
+def main():
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    raw = (open(src).read() if src != "-" else sys.stdin.read()).strip()
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(json.dumps({"error": f"JSON parse failed: {e}", "raw_preview": raw[:300]}))
+        return
+
+    if isinstance(data, dict):
+        items = data.get("scanResult", data.get("results", [data]))
+        if items and isinstance(items[0], dict) and "findings" in items[0]:
+            flat = []
+            for result in items:
+                for f in result.get("findings", []):
+                    f.setdefault("ip", result.get("ip", ""))
+                    f.setdefault("port", result.get("port", ""))
+                    flat.append(f)
+            items = flat
+    else:
+        items = data
+
+    by_sev = {}
+    flagged = []
+
+    for item in items:
+        sev = item.get("severity", item.get("finding_severity", "INFO")).upper()
+        finding_id = item.get("id", "").lower()
+        entry = {
+            "id": item.get("id", ""),
+            "severity": sev,
+            "finding": item.get("finding", ""),
+            "ip": item.get("ip", ""),
+            "port": item.get("port", ""),
+        }
+        by_sev.setdefault(sev, []).append(entry)
+        if sev in ("CRITICAL", "HIGH") or finding_id in HIGHLIGHT_IDS:
+            flagged.append(entry)
+
+    counts = {s: len(v) for s, v in by_sev.items()}
+    sorted_sevs = sorted(by_sev.keys(), key=lambda s: SEV_ORDER.get(s, 99))
+    trimmed = {s: by_sev[s][:15] for s in sorted_sevs if s in ("CRITICAL", "HIGH", "MEDIUM")}
+
+    print(json.dumps({
+        "total": len(items),
+        "by_severity": counts,
+        "flagged": flagged[:30],
+        "results": trimmed,
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

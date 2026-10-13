@@ -1,0 +1,8 @@
+{
+  "engagement-explore": {
+    "explorer": "profiles/engagement-explore.md",
+    "auditor": "profiles/audit-verify.md",
+    "description": "Black-box web surface exploration: routes, auth surface, business logic, IDOR — HTTP-only, no source access",
+    "triggers": "always — the only explorer available in target mode (black-box)"
+  }
+}

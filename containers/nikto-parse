@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""nikto-parse — compact JSON summary from nikto web scanner output.
+
+Reads nikto output written with -Format json -output nikto.json.
+Nikto JSON schema: {host, ip, port, banner, vulnerabilities:[{id, method, url,
+msg, references}]}
+
+Usage:
+  nikto -h http://target/ -Format json -output /tmp/nikto.json
+  nikto-parse /tmp/nikto.json
+"""
+import sys, json, re
+
+HIGH_RE = re.compile(
+    r'(sql|injection|xss|rce|exec|traversal|upload|rfi|lfi|ssti|ssrf'
+    r'|default.password|default.cred|backup|config|credential|exposed)',
+    re.IGNORECASE
+)
+
+def severity_guess(vuln):
+    text = vuln.get("msg", "") + vuln.get("references", "")
+    if HIGH_RE.search(text):
+        return "high"
+    refs = vuln.get("references", "")
+    if "CVE-" in refs or "OSVDB-" in refs:
+        return "medium"
+    return "info"
+
+def main():
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    if src == "-":
+        raw = sys.stdin.read()
+    else:
+        with open(src) as f:
+            raw = f.read()
+
+    raw = raw.strip()
+
+    # Nikto outputs wrapped in an outer array: [{"host":...}] or bare dict
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(json.dumps({"error": f"JSON parse failed: {e}", "raw_preview": raw[:300]}))
+        return
+
+    if isinstance(data, list):
+        data = data[0] if data else {}
+
+    vulns = data.get("vulnerabilities", [])
+    by_sev = {"high": [], "medium": [], "info": []}
+    for v in vulns:
+        sev = severity_guess(v)
+        by_sev[sev].append({
+            "id":     v.get("id", ""),
+            "method": v.get("method", "GET"),
+            "url":    v.get("url", ""),
+            "msg":    v.get("msg", "")[:120],
+            "refs":   v.get("references", "")[:80],
+        })
+
+    trimmed = {
+        "high":   by_sev["high"][:15],
+        "medium": by_sev["medium"][:15],
+        "info":   by_sev["info"][:3],
+    }
+
+    print(json.dumps({
+        "target":      data.get("host", ""),
+        "ip":          data.get("ip", ""),
+        "port":        data.get("port", ""),
+        "banner":      data.get("banner", ""),
+        "total":       len(vulns),
+        "vulnerable":  bool(by_sev["high"] or by_sev["medium"]),
+        "by_severity": {s: len(v) for s, v in by_sev.items()},
+        "findings":    trimmed,
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

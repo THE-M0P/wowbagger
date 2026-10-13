@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""grpcurl-parse — condense grpcurl list/describe output to compact JSON.
+
+Usage:
+  grpcurl -plaintext host:port list | grpcurl-parse
+  grpcurl -plaintext host:port describe ServiceName | grpcurl-parse
+  grpcurl-parse /tmp/grpcurl-list.txt
+"""
+import sys, re, json
+
+def parse_list(text):
+    """Parse 'grpcurl list' output — one service per line."""
+    services = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("Failed") and not line.startswith("Error"):
+            services.append(line)
+    return services
+
+def parse_describe(text):
+    """Parse 'grpcurl describe' output — extract service + methods."""
+    services = {}
+    current = None
+    for line in text.splitlines():
+        svc_m = re.match(r'^(\S+)\s+is a service:', line)
+        if svc_m:
+            current = svc_m.group(1)
+            services[current] = []
+            continue
+        if current:
+            rpc_m = re.match(r'\s+rpc\s+(\w+)\s*\(\s*\.?(\S+)\s*\)\s*returns\s*\(\s*\.?(\S+)\s*\)', line)
+            if rpc_m:
+                services[current].append({
+                    "method":  rpc_m.group(1),
+                    "request": rpc_m.group(2),
+                    "response": rpc_m.group(3),
+                })
+    return services
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    if path in ("-h", "--help"):
+        print(__doc__); sys.exit(0)
+
+    text = open(path).read() if (path and path != "-") else sys.stdin.read()
+
+    if "is a service:" in text:
+        result = {"type": "describe", "services": parse_describe(text)}
+    else:
+        svcs = parse_list(text)
+        result = {"type": "list", "count": len(svcs), "services": svcs}
+
+    print(json.dumps(result, indent=2))
+
+if __name__ == "__main__":
+    main()

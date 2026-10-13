@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""gobuster-parse — compact JSON summary from gobuster dir/dns/vhost output.
+
+Reads gobuster -o output.txt plain text output (gobuster does not auto-select JSON
+based on extension; -o always writes text). Groups results by status code; trims to 25 per
+bucket. Highlights interesting paths (admin, api, config, backup, login, secret,
+.git, .env, swagger, graphql).
+
+Usage:
+  gobuster dir -u http://target/ -w /opt/SecLists/... -o /tmp/gb.txt
+  gobuster-parse /tmp/gb.txt
+
+  gobuster dir -u http://target/ -w /opt/SecLists/... | gobuster-parse -
+"""
+import sys, json, re
+
+INTERESTING_RE = re.compile(
+    r'/(admin|api|backup|config|debug|env|git|graphql|internal|login|panel'
+    r'|secret|swagger|phpinfo|\.env|\.git|upload|shell|console|actuator)',
+    re.IGNORECASE
+)
+
+def parse_json(data):
+    results = []
+    # gobuster JSON: {"results": [...]} or array at top level
+    if isinstance(data, dict):
+        items = data.get("results", data.get("results", []))
+    elif isinstance(data, list):
+        items = data
+    else:
+        return []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        results.append({
+            "status": item.get("status", item.get("Status")),
+            "path":   item.get("path",   item.get("Path", item.get("url", ""))),
+            "length": item.get("length", item.get("Length", item.get("size", 0))),
+        })
+    return results
+
+def parse_text(lines):
+    # Patterns:
+    #   /admin (Status: 200) [Size: 4321]
+    #   Found: admin.example.com
+    results = []
+    pat = re.compile(r'(\S+)\s+\(Status:\s*(\d+)\)(?:\s+\[Size:\s*(\d+)\])?')
+    for line in lines:
+        m = pat.search(line)
+        if m:
+            results.append({
+                "status": int(m.group(2)),
+                "path":   m.group(1),
+                "length": int(m.group(3)) if m.group(3) else 0,
+            })
+        elif line.startswith("Found:"):
+            results.append({"status": None, "path": line[6:].strip(), "length": 0})
+    return results
+
+def main():
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    if src == "-":
+        raw = sys.stdin.read()
+    else:
+        with open(src) as f:
+            raw = f.read()
+
+    raw = raw.strip()
+    results = []
+    if raw.startswith("{") or raw.startswith("["):
+        try:
+            results = parse_json(json.loads(raw))
+        except json.JSONDecodeError:
+            results = parse_text(raw.splitlines())
+    else:
+        results = parse_text(raw.splitlines())
+
+    by_status = {}
+    interesting = []
+    for r in results:
+        s = str(r["status"]) if r["status"] is not None else "found"
+        by_status.setdefault(s, []).append(r)
+        if INTERESTING_RE.search(r.get("path", "")):
+            interesting.append(r)
+
+    print(json.dumps({
+        "total":       len(results),
+        "by_status":   {s: len(v) for s, v in by_status.items()},
+        "interesting": interesting[:20],
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

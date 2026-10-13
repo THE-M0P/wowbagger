@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""oauth2-pkce — OAuth2 PKCE helper: register a DCR client and generate a ready-to-use authorize URL.
+
+Usage:
+  oauth2-pkce --base-url http://host:port --redirect-uri http://attacker/cb
+  oauth2-pkce --base-url http://host:port --redirect-uri http://attacker/cb --no-register --client-id <id>
+
+Outputs JSON with: client_id, code_verifier, code_challenge, authorize_url, token_curl
+"""
+import sys, os, json, hashlib, base64, secrets, argparse
+try:
+    import urllib.request, urllib.error
+except ImportError:
+    pass
+
+def b64url(b):
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+def pkce_pair():
+    verifier = b64url(secrets.token_bytes(32))
+    challenge = b64url(hashlib.sha256(verifier.encode()).digest())
+    return verifier, challenge
+
+def dcr_register(base_url, redirect_uri, extra_uris=None):
+    reg_url = base_url.rstrip("/") + "/oauth2/register"
+    uris = [redirect_uri] + (extra_uris or [])
+    payload = json.dumps({
+        "client_name":   "pentest-client",
+        "redirect_uris": uris,
+        "grant_types":   ["authorization_code"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+    }).encode()
+    req = urllib.request.Request(reg_url, data=payload,
+                                  headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        return {"error": f"HTTP {e.code}", "body": body}
+    except Exception as e:
+        return {"error": str(e)}
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--base-url",     required=True, help="OAuth2 server base URL")
+    ap.add_argument("--redirect-uri", required=True, help="Primary redirect URI")
+    ap.add_argument("--extra-uris",   nargs="*",     help="Extra redirect URIs to register (bypass test)")
+    ap.add_argument("--no-register",  action="store_true", help="Skip DCR; supply --client-id directly")
+    ap.add_argument("--client-id",    default="",    help="Client ID (with --no-register)")
+    ap.add_argument("--scope",        default="openid profile email", help="Requested scope")
+    ap.add_argument("--state",        default="pentest-state-001")
+    args = ap.parse_args()
+
+    verifier, challenge = pkce_pair()
+    state = args.state
+
+    if args.no_register:
+        client_id = args.client_id
+        dcr_result = None
+    else:
+        dcr_result = dcr_register(args.base_url, args.redirect_uri, args.extra_uris)
+        client_id = dcr_result.get("client_id", "")
+
+    base = args.base_url.rstrip("/")
+    authorize_url = (
+        f"{base}/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={urllib.parse.quote(args.redirect_uri, safe='')}"
+        f"&response_type=code"
+        f"&code_challenge={challenge}"
+        f"&code_challenge_method=S256"
+        f"&scope={args.scope.replace(' ', '+')}"
+        f"&state={state}"
+    )
+
+    token_curl = (
+        f"curl -s -X POST {base}/oauth2/token \\\n"
+        f"  -H 'Content-Type: application/x-www-form-urlencoded' \\\n"
+        f"  -d 'grant_type=authorization_code"
+        f"&client_id={client_id}"
+        f"&redirect_uri={args.redirect_uri}"
+        f"&code=<CODE_FROM_REDIRECT>"
+        f"&code_verifier={verifier}'"
+    )
+
+    # PKCE downgrade test (omit code_verifier)
+    token_curl_downgrade = (
+        f"curl -s -X POST {base}/oauth2/token \\\n"
+        f"  -H 'Content-Type: application/x-www-form-urlencoded' \\\n"
+        f"  -d 'grant_type=authorization_code"
+        f"&client_id={client_id}"
+        f"&redirect_uri={args.redirect_uri}"
+        f"&code=<CODE_FROM_REDIRECT>'"
+        f"  # PKCE downgrade: omits code_verifier — should fail with 400"
+    )
+
+    result = {
+        "client_id":      client_id,
+        "code_verifier":  verifier,
+        "code_challenge": challenge,
+        "state":          state,
+        "dcr_response":   dcr_result,
+        "authorize_url":  authorize_url,
+        "token_curl":     token_curl,
+        "token_curl_pkce_downgrade": token_curl_downgrade,
+        "notes": [
+            "1. Open authorize_url in browser (with active session cookie) or use curl -b 'phoenix-access-token=...'",
+            "2. Capture the ?code= from the redirect",
+            "3. Run token_curl with the code",
+            "4. Run token_curl_pkce_downgrade — if it succeeds, PKCE is not enforced (finding)",
+            "5. Test redirect_uri bypass: rerun authorize with a different redirect_uri param",
+        ]
+    }
+    print(json.dumps(result, indent=2))
+
+if __name__ == "__main__":
+    import urllib.parse
+    main()

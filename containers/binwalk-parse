@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""binwalk-parse — compact JSON summary from binwalk firmware analysis output.
+
+Reads binwalk output in two forms:
+  1. Plain text pipe from stdout (standard binwalk on Kali — most reliable)
+  2. JSON array from binwalk3 --json flag (binwalk v3+ only)
+
+Usage:
+  binwalk firmware.bin | binwalk-parse -            # pipe text output (preferred)
+  binwalk --log=/tmp/bw.txt firmware.bin            # --log saves TEXT, not JSON
+  binwalk-parse /tmp/bw.txt
+
+  # binwalk3 only (not standard Kali):
+  binwalk --json firmware.bin > /tmp/bw.json && binwalk-parse /tmp/bw.json
+"""
+import sys, json, re
+
+INTERESTING_RE = re.compile(
+    r'(certificate|private.key|ssh|password|secret|credential|config|database'
+    r'|squashfs|jffs|cramfs|ext2|ext3|ext4|ubifs|yaffs|cpio|gzip|bzip2|lzma'
+    r'|xz|zip|tar|executable|elf|mach-o|pe32|bootloader|uboot|kernel)',
+    re.IGNORECASE
+)
+
+def parse_json_log(data):
+    """Parse binwalk --log JSON format."""
+    sigs = []
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        # binwalk v3 wraps in {file: ..., signatures: [...]}
+        items = data.get("signatures", data.get("results", [data]))
+    else:
+        return []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        sigs.append({
+            "offset":      item.get("offset",      item.get("decimal", item.get("start", 0))),
+            "description": item.get("description", item.get("name", item.get("signature", ""))),
+            "size":        item.get("size",         item.get("length", 0)),
+        })
+    return sigs
+
+def parse_text(lines):
+    """Parse binwalk plain text: DECIMAL   HEXADECIMAL   DESCRIPTION"""
+    sigs = []
+    in_table = False
+    sep_re = re.compile(r'^-+$')
+    row_re  = re.compile(r'^(\d+)\s+(0x[0-9A-Fa-f]+)\s+(.+)$')
+
+    for line in lines:
+        line = line.rstrip()
+        if sep_re.match(line):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        m = row_re.match(line)
+        if m:
+            sigs.append({
+                "offset":      int(m.group(1)),
+                "description": m.group(3).strip(),
+                "size":        0,
+            })
+    return sigs
+
+def main():
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    if src == "-":
+        raw = sys.stdin.read()
+    else:
+        with open(src) as f:
+            raw = f.read()
+
+    raw = raw.strip()
+    sigs = []
+
+    if raw.startswith("{") or raw.startswith("["):
+        try:
+            sigs = parse_json_log(json.loads(raw))
+        except json.JSONDecodeError:
+            sigs = parse_text(raw.splitlines())
+    else:
+        sigs = parse_text(raw.splitlines())
+
+    interesting = [s for s in sigs if INTERESTING_RE.search(s.get("description", ""))]
+    by_type = {}
+    for s in sigs:
+        desc = s.get("description", "")
+        key = desc.split(",")[0][:40]
+        by_type[key] = by_type.get(key, 0) + 1
+
+    print(json.dumps({
+        "total_signatures":  len(sigs),
+        "interesting_count": len(interesting),
+        "type_summary":      dict(sorted(by_type.items(), key=lambda x: -x[1])[:20]),
+        "interesting":       interesting[:20],
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

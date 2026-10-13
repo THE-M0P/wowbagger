@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""wfuzz-parse — compact JSON summary from wfuzz fuzzing output.
+
+Reads wfuzz JSON written with -f /tmp/wfuzz.json,json.
+Groups by response code; caps at 25 per bucket. Flags interesting paths.
+
+Usage:
+  wfuzz -c -z file,/opt/SecLists/Discovery/Web-Content/common.txt \
+        -f /tmp/wfuzz.json,json --hc 404 http://target/FUZZ
+  wfuzz-parse /tmp/wfuzz.json
+"""
+import sys, json, re
+
+INTERESTING_RE = re.compile(
+    r'/(admin|api|backup|config|debug|env|git|graphql|internal|login|panel'
+    r'|secret|swagger|phpinfo|\.env|\.git|upload|shell|console|actuator)',
+    re.IGNORECASE
+)
+
+def main():
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    raw = open(src).read() if src != "-" else sys.stdin.read()
+
+    try:
+        data = json.loads(raw.strip())
+    except json.JSONDecodeError as e:
+        print(json.dumps({"error": f"JSON parse failed: {e}", "raw_preview": raw[:300]}))
+        return
+
+    # wfuzz outputs array of result objects
+    if isinstance(data, dict):
+        items = data.get("results", [data])
+    else:
+        items = data
+
+    by_code = {}
+    interesting = []
+
+    for item in items:
+        code = str(item.get("code", item.get("l_code", "?")))
+        url = item.get("url", item.get("uri", ""))
+        chars = item.get("chars", item.get("l_chars", 0))
+        payload = item.get("payload", "")
+        # flatten nested payload structures
+        if isinstance(payload, list):
+            payload = " ".join(str(p) for p in payload)
+        elif isinstance(payload, dict):
+            payload = str(payload.get("value", payload))
+
+        entry = {"code": code, "url": url, "chars": chars, "payload": payload}
+        by_code.setdefault(code, []).append(entry)
+        if INTERESTING_RE.search(url) or INTERESTING_RE.search(str(payload)):
+            interesting.append(entry)
+
+    trimmed = {code: bucket[:25] for code, bucket in by_code.items()}
+    print(json.dumps({
+        "total": len(items),
+        "by_code": {c: len(v) for c, v in by_code.items()},
+        "interesting": interesting[:20],
+        "results": trimmed,
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

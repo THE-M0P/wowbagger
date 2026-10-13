@@ -1,0 +1,38 @@
+# Node / local-viewer SPA source (built bundle in strix/interface/viewer/static/ is committed)
+node_modules/
+strix/interface/viewer/frontend/node_modules/
+strix/interface/viewer/frontend/.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+
+# Config (may contain API keys / local paths)
+config.toml
+
+# Engagement data — potentially sensitive, never commit
+strix-runs/
+evals/runs/
+*.jsonl
+
+# Secrets / credentials
+.env
+.env.*
+*.key
+*.pem
+secrets/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

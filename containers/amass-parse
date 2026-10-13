@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""amass-parse — compact JSON summary from amass subdomain enumeration.
+
+Reads amass output written with -json /tmp/amass.json (NDJSON format).
+Aggregates unique subdomains, IPs, sources, and ASNs.
+
+Usage:
+  amass enum -passive -d target.com -json /tmp/amass.json
+  amass-parse /tmp/amass.json
+
+  # Intel mode (certificate transparency, etc.):
+  amass intel -d target.com -json /tmp/amass.json
+  amass-parse /tmp/amass.json
+"""
+import sys, json
+
+def main():
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    lines = (open(src) if src != "-" else sys.stdin).readlines()
+
+    subdomains = set()
+    ips = set()
+    sources = {}
+    asns = set()
+    records = []
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        name = obj.get("name", obj.get("fqdn", ""))
+        domain = obj.get("domain", "")
+        if not name:
+            continue
+        subdomains.add(name)
+
+        for addr in obj.get("addresses", []):
+            ip = addr.get("ip", "")
+            if ip:
+                ips.add(ip)
+            asn = addr.get("asn", 0)
+            if asn:
+                asns.add(asn)
+
+        src_name = obj.get("source", obj.get("tag", ""))
+        if src_name:
+            sources[src_name] = sources.get(src_name, 0) + 1
+
+        records.append({"name": name, "domain": domain,
+                         "addresses": [a.get("ip", "") for a in obj.get("addresses", []) if a.get("ip")]})
+
+    # deduplicate records by name
+    seen = set()
+    deduped = []
+    for r in records:
+        if r["name"] not in seen:
+            seen.add(r["name"])
+            deduped.append(r)
+
+    sub_list = sorted(subdomains)
+    print(json.dumps({
+        "total_subdomains": len(subdomains),
+        "total_ips": len(ips),
+        "sources": sources,
+        "asns": sorted(asns),
+        "subdomains_sample": sub_list[:50],
+        "subdomains_truncated": len(subdomains) > 50,
+        "results": deduped[:50],
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

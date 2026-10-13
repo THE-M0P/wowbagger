@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""httpx-parse — condense httpx -json JSONL output to a compact summary.
+
+Usage:
+  httpx -l hosts.txt -json -o /tmp/httpx.jsonl -title -tech-detect -status-code
+  httpx-parse /tmp/httpx.jsonl
+"""
+import sys, json, re
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    if path in ("-h", "--help", None) and sys.stdin.isatty():
+        print(__doc__); sys.exit(0)
+
+    src = sys.stdin if path in ("-", None) else open(path)
+    hosts = []
+    for line in src:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        hosts.append({
+            "url":         r.get("url", ""),
+            "status":      r.get("status-code") or r.get("status_code"),
+            "title":       r.get("title", ""),
+            "length":      r.get("content-length") or r.get("content_length"),
+            "tech":        r.get("tech", []) or r.get("technologies", []),
+            "webserver":   r.get("webserver", ""),
+            "cdn":         r.get("cdn", False),
+            "tls":         r.get("tls", {}).get("host") if isinstance(r.get("tls"), dict) else None,
+        })
+
+    by_status = {}
+    for h in hosts:
+        s = str(h.get("status", "unknown"))
+        by_status.setdefault(s, []).append(h["url"])
+
+    all_tech = {}
+    for h in hosts:
+        for t in (h.get("tech") or []):
+            all_tech[t] = all_tech.get(t, 0) + 1
+
+    NOTABLE_TECH = re.compile(
+        r'(spring|django|rails|laravel|express|actuator|admin|struts|jenkins|'
+        r'jira|confluence|gitlab|grafana|kibana|elastic|wordpress|drupal)',
+        re.IGNORECASE
+    )
+    interesting = [
+        h for h in hosts
+        if any(NOTABLE_TECH.search(t) for t in (h.get("tech") or []))
+        or str(h.get("status", "")) in ("401", "403", "500", "302")
+        or any(kw in (h.get("title") or "").lower()
+               for kw in ("admin", "login", "dashboard", "panel", "error", "debug"))
+    ]
+
+    print(json.dumps({
+        "total":       len(hosts),
+        "by_status":   {k: len(v) for k, v in by_status.items()},
+        "tech_seen":   dict(sorted(all_tech.items(), key=lambda x: -x[1])[:15]),
+        "interesting": interesting[:20],
+        "hosts":       hosts[:50],
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

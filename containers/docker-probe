@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""docker-probe — probe Docker daemon API for unauthenticated access.
+
+Checks docker.sock (unix) and common TCP ports (2375, 2376).
+Enumerates containers, images, volumes, and network info if accessible.
+
+Usage:
+  docker-probe                      # check /var/run/docker.sock
+  docker-probe --host tcp://1.2.3.4:2375
+"""
+import sys, json, os, urllib.request, urllib.error
+
+def fetch_unix(path, endpoint):
+    import socket, http.client
+
+    class UnixHTTPConnection(http.client.HTTPConnection):
+        def __init__(self, sock_path):
+            super().__init__("localhost")
+            self.sock_path = sock_path
+        def connect(self):
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.connect(self.sock_path)
+            self.sock = s
+
+    conn = UnixHTTPConnection(path)
+    try:
+        conn.request("GET", endpoint)
+        r = conn.getresponse()
+        return r.status, json.loads(r.read().decode())
+    except Exception as e:
+        return None, str(e)
+    finally:
+        conn.close()
+
+def fetch_tcp(base_url, endpoint):
+    try:
+        with urllib.request.urlopen(base_url + endpoint, timeout=5) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, str(e)
+    except Exception as e:
+        return None, str(e)
+
+def probe(fetcher):
+    result = {}
+
+    status, data = fetcher("/version")
+    if status is None or status not in (200, 201):
+        return {"accessible": False, "error": data}
+
+    result["accessible"] = True
+    result["version"] = {
+        "api": data.get("ApiVersion"),
+        "docker": data.get("Version"),
+        "os": data.get("Os"),
+        "arch": data.get("Arch"),
+    } if isinstance(data, dict) else data
+
+    _, containers = fetcher("/containers/json?all=true")
+    if isinstance(containers, list):
+        result["containers"] = [
+            {"id": c.get("Id", "")[:12],
+             "image": c.get("Image", ""),
+             "status": c.get("State", ""),
+             "ports": c.get("Ports", []),
+             "mounts": [m.get("Source") for m in c.get("Mounts", [])]}
+            for c in containers[:20]
+        ]
+        result["container_count"] = len(containers)
+
+    _, images = fetcher("/images/json")
+    if isinstance(images, list):
+        result["image_count"] = len(images)
+        result["images"] = [
+            {"id": i.get("Id", "")[:19],
+             "tags": i.get("RepoTags", []),
+             "size_mb": round(i.get("Size", 0) / 1e6, 1)}
+            for i in images[:10]
+        ]
+
+    _, info = fetcher("/info")
+    if isinstance(info, dict):
+        result["daemon_info"] = {
+            "swarm": info.get("Swarm", {}).get("LocalNodeState"),
+            "security_opts": info.get("SecurityOptions", []),
+            "cgroup_driver": info.get("CgroupDriver"),
+            "logging_driver": info.get("LoggingDriver"),
+        }
+
+    result["rce_hint"] = ("POST /containers/create with Binds:[\"/:/host\"] and Privileged:true "
+                          "then exec `chroot /host` to escape to host filesystem")
+    return result
+
+def main():
+    host = None
+    for i, arg in enumerate(sys.argv[1:]):
+        if arg == "--host" and i + 1 < len(sys.argv) - 1:
+            host = sys.argv[i + 2]
+
+    results = {}
+
+    if host:
+        base = host.replace("tcp://", "http://")
+        results["tcp"] = probe(lambda ep: fetch_tcp(base, ep))
+    else:
+        sock = "/var/run/docker.sock"
+        if os.path.exists(sock):
+            results["unix_socket"] = probe(lambda ep: fetch_unix(sock, ep))
+        else:
+            results["unix_socket"] = {"accessible": False, "error": "socket not found"}
+
+        for port in (2375, 2376):
+            base = f"http://127.0.0.1:{port}"
+            status, data = fetch_tcp(base, "/version")
+            if status == 200:
+                results[f"tcp_{port}"] = probe(lambda ep, b=base: fetch_tcp(b, ep))
+
+    any_accessible = any(
+        v.get("accessible") for v in results.values() if isinstance(v, dict)
+    )
+    print(json.dumps({"any_accessible": any_accessible, **results}, indent=2))
+
+if __name__ == "__main__":
+    main()

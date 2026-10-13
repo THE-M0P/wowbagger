@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""smuggler-parse — compact JSON summary from smuggler HTTP desync scanner output.
+
+smuggler.py has no native JSON output. It prints text results and saves
+candidate payloads to payloads/<id>.txt when a potential desync is found.
+
+Usage:
+  python3 /home/pentester/tools/smuggler/smuggler.py -u http://target/ 2>&1 | tee /tmp/smuggler.txt
+  smuggler-parse /tmp/smuggler.txt
+
+  # Or pipe:
+  python3 /home/pentester/tools/smuggler/smuggler.py -u http://target/ 2>&1 | smuggler-parse -
+
+  # Include payload file directory for richer output:
+  smuggler-parse /tmp/smuggler.txt --payloads-dir /tmp/payloads/
+"""
+import sys, json, re, os, argparse
+
+# Smuggler output patterns
+DESYNC_RE  = re.compile(r'\[!\]\s+((?:Possible|Confirmed)\s+(?:CL\.TE|TE\.CL|CL\.CL|TE\.TE|H2\.CL|H2\.TE)\s*(?:detected|desync)?)', re.IGNORECASE)
+ISSUE_RE   = re.compile(r'\[!\]\s+(.+)', re.IGNORECASE)
+URL_RE     = re.compile(r'(?:Target|URL|Testing):\s+(https?://\S+)', re.IGNORECASE)
+TIMEOUT_RE = re.compile(r'timeout|hung|delay', re.IGNORECASE)
+SAVED_RE   = re.compile(r'(?:Saved|Wrote|payload)\s+(?:to\s+)?(\S+\.txt)', re.IGNORECASE)
+VARIANT_RE = re.compile(r'(?:Trying|Testing)\s+(\w+[-./]\w+)', re.IGNORECASE)
+H2_RE      = re.compile(r'(?:H2|HTTP/2|h2c)', re.IGNORECASE)
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("input", nargs="?", default="-")
+    ap.add_argument("--payloads-dir", default="payloads/", help="Directory where smuggler writes payload .txt files")
+    args = ap.parse_args()
+
+    if args.input == "-":
+        raw = sys.stdin.read()
+    else:
+        with open(args.input) as f:
+            raw = f.read()
+
+    lines = raw.splitlines()
+
+    findings = []
+    url = ""
+    saved_payloads = []
+    variants_tried = []
+    has_timeout = False
+
+    for line in lines:
+        if m := DESYNC_RE.search(line):
+            findings.append(m.group(1).strip())
+        elif m := ISSUE_RE.search(line):
+            text = m.group(1).strip()
+            if len(text) < 120:
+                findings.append(text)
+        if m := URL_RE.search(line):
+            url = m.group(1)
+        if m := SAVED_RE.search(line):
+            saved_payloads.append(m.group(1))
+        if m := VARIANT_RE.search(line):
+            v = m.group(1)
+            if v not in variants_tried:
+                variants_tried.append(v)
+        if TIMEOUT_RE.search(line):
+            has_timeout = True
+
+    findings = list(dict.fromkeys(findings))  # deduplicate
+
+    # Check payloads dir for saved files (confirms finding)
+    payload_files = []
+    pdir = args.payloads_dir
+    if os.path.isdir(pdir):
+        payload_files = [f for f in os.listdir(pdir) if f.endswith(".txt")]
+
+    desync_types = [f for f in findings if re.search(r'CL\.|TE\.|H2\.', f, re.IGNORECASE)]
+    vulnerable = bool(desync_types) or bool(payload_files)
+
+    # Filter all_issues to real signal lines only (drop progress/variant noise)
+    signal_re = re.compile(r'CL\.|TE\.|H2\.|desync|timeout|hung|delay|Possible|Confirmed', re.IGNORECASE)
+    signal_issues = [f for f in findings if signal_re.search(f)]
+
+    out = {
+        "vulnerable":       vulnerable,
+        "url":              url,
+        "desync_types":     desync_types,
+        "timeout_detected": has_timeout,
+        "payload_files":    payload_files[:10],
+        "saved_paths":      saved_payloads[:5],
+        "signal_issues":    signal_issues[:10],
+    }
+
+    if vulnerable:
+        out["note"] = "Verify with Burp Repeater / turbo intruder before reporting"
+
+    print(json.dumps(out, indent=2))
+
+if __name__ == "__main__":
+    main()

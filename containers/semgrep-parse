@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""semgrep-parse — condense semgrep --json output to a compact summary.
+
+Usage:
+  semgrep --config auto /path/to/source --json -o /tmp/semgrep.json
+  semgrep-parse /tmp/semgrep.json
+
+  or pipe:  semgrep ... --json | semgrep-parse
+"""
+import sys, json
+
+SEV_ORDER = ["ERROR", "WARNING", "INFO", "EXPERIMENT", "INVENTORY"]
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    if path in ("-h", "--help"):
+        print(__doc__); sys.exit(0)
+
+    raw = sys.stdin.read() if path in ("-", None) else open(path).read()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(json.dumps({"error": f"JSON parse failed: {e}"})); sys.exit(1)
+
+    results = data.get("results", [])
+    errors  = data.get("errors", [])
+
+    by_sev = {}
+    for r in results:
+        sev = (r.get("extra", {}).get("severity") or r.get("severity") or "INFO").upper()
+        by_sev.setdefault(sev, []).append({
+            "rule":    r.get("check_id", ""),
+            "file":    r.get("path", ""),
+            "line":    r.get("start", {}).get("line"),
+            "message": (r.get("extra", {}).get("message") or "")[:200],
+        })
+
+    sorted_findings = {k: by_sev[k] for k in SEV_ORDER if k in by_sev}
+    # any other severities not in the canonical order
+    for k in by_sev:
+        if k not in sorted_findings:
+            sorted_findings[k] = by_sev[k]
+
+    counts = {k: len(v) for k, v in sorted_findings.items()}
+    # Only show up to 10 findings per severity to keep output token-efficient
+    trimmed = {k: v[:10] for k, v in sorted_findings.items()}
+
+    print(json.dumps({
+        "total":    sum(counts.values()),
+        "counts":   counts,
+        "errors":   len(errors),
+        "findings": trimmed,
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

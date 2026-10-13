@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""ffuf-parse — condense ffuf -of json output to a compact summary.
+
+Usage:
+  ffuf -u http://target/FUZZ -w wordlist.txt -of json -o /tmp/ffuf.json
+  ffuf-parse /tmp/ffuf.json
+"""
+import sys, json, re
+
+INTERESTING_RE = re.compile(
+    r"(admin|api|backup|config|debug|env|graphql|internal|login|manage|oauth|password|"
+    r"reset|secret|setup|swagger|token|upload|user|v1|v2|v3|\.git|\.env|\.bak)",
+    re.IGNORECASE
+)
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    if path in ("-h", "--help", None) and sys.stdin.isatty():
+        print(__doc__); sys.exit(0)
+
+    raw = sys.stdin.read() if path in ("-", None) else open(path).read()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(json.dumps({"error": f"JSON parse failed: {e}"})); sys.exit(1)
+
+    results = data.get("results", [])
+    config  = data.get("config", {})
+
+    by_status = {}
+    interesting = []
+    for r in results:
+        status = r.get("status", 0)
+        url    = r.get("url", "")
+        entry  = {
+            "url":    url,
+            "status": status,
+            "length": r.get("length", 0),
+            "words":  r.get("words", 0),
+        }
+        by_status.setdefault(str(status), []).append(entry)
+        if INTERESTING_RE.search(url):
+            interesting.append(entry)
+
+    counts = {k: len(v) for k, v in by_status.items()}
+    # Trim each bucket to 20 entries max
+    trimmed = {k: v[:20] for k, v in by_status.items()}
+
+    print(json.dumps({
+        "target":      config.get("url", ""),
+        "wordlist":    config.get("wordlist", {}).get("input", ""),
+        "total_hits":  sum(counts.values()),
+        "by_status":   counts,
+        "interesting": interesting[:20],
+        "results":     trimmed,
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

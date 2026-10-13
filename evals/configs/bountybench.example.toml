@@ -1,0 +1,5 @@
+bountybench = "/path/to/bountybench"
+strix = "strix"
+default_output = "runs"
+default_scan_mode = "standard"
+default_max_turns = 120

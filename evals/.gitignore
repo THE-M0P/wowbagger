@@ -1,0 +1,10 @@
+/config.toml
+/.pytest_cache/
+/build/
+/dist/
+/htmlcov/
+/.coverage
+/.venv/
+/runs/
+__pycache__/
+*.egg-info/

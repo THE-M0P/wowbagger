@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""whatweb-parse — compact JSON summary from whatweb technology fingerprinting.
+
+Reads whatweb output written with --log-json file.json.
+Each line of that file is a JSON object for one target.
+
+Usage:
+  whatweb --log-json /tmp/ww.json http://target/
+  whatweb-parse /tmp/ww.json
+
+  # Multiple targets
+  whatweb --log-json /tmp/ww.json -i targets.txt
+  whatweb-parse /tmp/ww.json
+"""
+import sys, json
+
+INTERESTING_PLUGINS = {
+    "Apache", "Nginx", "IIS", "PHP", "ASP", "Ruby-on-Rails", "Django",
+    "WordPress", "Joomla", "Drupal", "Laravel", "Spring", "Struts",
+    "JQuery", "Bootstrap", "React", "AngularJS", "Vue",
+    "X-Powered-By", "HTTPServer", "Title",
+    "Email", "Google-Analytics", "reCAPTCHA",
+    "PasswordField", "LoginForm", "AdminPage",
+    "Cookies", "Frame", "Strict-Transport-Security",
+}
+
+def extract_plugin(name, raw):
+    if not isinstance(raw, dict):
+        return None
+    parts = []
+    for key in ("string", "version", "account", "module"):
+        vals = raw.get(key, [])
+        if isinstance(vals, list):
+            parts.extend(str(v) for v in vals)
+        elif vals:
+            parts.append(str(vals))
+    return ", ".join(parts) if parts else True
+
+def main():
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    if src == "-":
+        lines = sys.stdin.readlines()
+    else:
+        with open(src) as f:
+            lines = f.readlines()
+
+    hosts = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        plugins = obj.get("plugins", {})
+        tech = {}
+        for name, raw in plugins.items():
+            detail = extract_plugin(name, raw)
+            if detail:
+                tech[name] = detail if detail is not True else ""
+
+        interesting = {k: v for k, v in tech.items() if k in INTERESTING_PLUGINS}
+
+        hosts.append({
+            "target":    obj.get("target", ""),
+            "status":    obj.get("http_status", ""),
+            "tech":      interesting,
+            "all_plugins": list(tech.keys()),
+        })
+
+    all_tech = {}
+    for h in hosts:
+        for k, v in h["tech"].items():
+            if k not in all_tech:
+                all_tech[k] = v
+
+    print(json.dumps({
+        "total_targets": len(hosts),
+        "aggregated_tech": all_tech,
+        "hosts": hosts[:30],
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

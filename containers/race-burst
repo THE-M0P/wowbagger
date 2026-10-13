@@ -1,0 +1,115 @@
+#!/app/.venv/bin/python3
+"""race-burst — fire N concurrent HTTP requests with microsecond-level timing control.
+
+Designed for race condition testing: single-use coupons, balance operations,
+TOCTOU resource creation, concurrent session limits.
+
+Usage:
+  race-burst --url http://host/api/redeem --method POST \
+             --header "Authorization: Bearer TOKEN" \
+             --body '{"coupon":"ABC123"}' \
+             --count 20
+
+  # Read request from a file (one header per line, blank line, body)
+  race-burst --url http://host/api/redeem --from-file /tmp/req.txt --count 50
+
+Output: JSON with per-request results + summary of status code distribution.
+"""
+import sys, json, time, argparse, asyncio
+try:
+    import aiohttp
+except ImportError:
+    print(json.dumps({"error": "aiohttp not installed — run: pip install aiohttp"}))
+    sys.exit(1)
+
+async def fire(session, method, url, headers, body, idx):
+    t0 = time.monotonic()
+    try:
+        async with session.request(
+            method, url,
+            headers=headers,
+            data=body,
+            allow_redirects=False,
+            timeout=aiohttp.ClientTimeout(total=15),
+            ssl=False,
+        ) as resp:
+            text = await resp.text()
+            elapsed = (time.monotonic() - t0) * 1000
+            return {
+                "i":      idx,
+                "status": resp.status,
+                "length": len(text),
+                "ms":     round(elapsed, 1),
+                "body":   text[:200],
+            }
+    except Exception as e:
+        elapsed = (time.monotonic() - t0) * 1000
+        return {"i": idx, "error": str(e), "ms": round(elapsed, 1)}
+
+async def run(method, url, headers, body, count, stagger_ms):
+    connector = aiohttp.TCPConnector(limit=count, force_close=False)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        # Pre-warm the connection pool
+        tasks = []
+        launch_times = []
+        for i in range(count):
+            if stagger_ms:
+                await asyncio.sleep(stagger_ms / 1000)
+            launch_times.append(time.monotonic())
+            tasks.append(asyncio.create_task(
+                fire(session, method, url, headers, body, i)
+            ))
+        results = await asyncio.gather(*tasks)
+    return results, launch_times
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--url",        required=True)
+    ap.add_argument("--method",     default="POST")
+    ap.add_argument("--header",     action="append", default=[], metavar="K:V")
+    ap.add_argument("--body",       default="")
+    ap.add_argument("--count",      type=int, default=10)
+    ap.add_argument("--stagger-ms", type=float, default=0,
+                    help="Stagger between launches (ms). 0 = all at once (single-packet style)")
+    ap.add_argument("--content-type", default="application/json")
+    args = ap.parse_args()
+
+    headers = {"Content-Type": args.content_type}
+    for h in args.header:
+        if ":" in h:
+            k, v = h.split(":", 1)
+            headers[k.strip()] = v.strip()
+
+    body = args.body.encode() if args.body else None
+
+    results, _ = asyncio.run(run(
+        args.method.upper(), args.url, headers, body,
+        args.count, args.stagger_ms,
+    ))
+
+    by_status = {}
+    errors = 0
+    for r in results:
+        if "error" in r:
+            errors += 1
+        else:
+            s = str(r["status"])
+            by_status[s] = by_status.get(s, 0) + 1
+
+    timings = [r["ms"] for r in results if "ms" in r]
+    summary = {
+        "count":      args.count,
+        "by_status":  by_status,
+        "errors":     errors,
+        "timing_ms":  {
+            "min":  round(min(timings), 1) if timings else None,
+            "max":  round(max(timings), 1) if timings else None,
+            "mean": round(sum(timings)/len(timings), 1) if timings else None,
+        },
+        "note": "Status variation across requests = potential race condition. All same status = likely safe.",
+    }
+
+    print(json.dumps({"summary": summary, "results": results}, indent=2))
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,58 @@
+# wowbagger-evals configuration
+# Copy to ~/.config/wowbagger-evals/config.toml and fill in the paths for your machine.
+# All values can also be set as environment variables (env var takes precedence).
+
+# Path to the strix binary. If strix is in your PATH you can omit this entirely.
+# Env var: STRIX_BIN
+# strix = "~/.local/bin/strix"
+
+# Path to your BountyBench clone (required for --mode whitebox).
+# Env var: BOUNTYBENCH_DIR
+# bountybench_dir = "~/src/BountyBench"
+
+# Path to your CVE/BountyBench specialist pack (whitebox mode default).
+# Env var: ENGAGE_SPECIALIST_PACK
+# specialist_pack = "~/src/wowbagger/specialists/bug-bounty-cve"
+
+# Path to your smoke-test specialist pack — must contain profiles/smoke-test.md.
+# Defaults to specialist_pack above. Only set this if your default pack lacks smoke-test.md.
+# Env var: ENGAGE_SMOKE_SPECIALIST_PACK
+# smoke_specialist_pack = "~/src/wowbagger/specialists/bug-bounty-cve"
+
+# Path to your target specialist pack (required for --mode target).
+# Also accepted as ENGAGE_H1_SPECIALIST_PACK / h1_specialist_pack for backwards compatibility.
+# Env var: ENGAGE_TARGET_SPECIALIST_PACK
+# target_specialist_pack = "~/src/wowbagger/specialists/bug-bounty-target"
+
+# LLM settings — set these to avoid repeating model flags on every invocation.
+# Use anthropic/<model-id> for Claude (bare claude-* names route to OpenAI backend and fail).
+# Env var: STRIX_LLM
+# llm = "anthropic/claude-sonnet-5-5"
+# llm = "openai/Qwen3-8B-Instruct:latest"   # local via llama-server or Ollama
+
+# LLM API base URL — required for local models and proxies.
+# Env var: LLM_API_BASE
+# llm_api_base = "http://localhost:11434/v1"
+
+# LLM API key — "local" works for most local providers.
+# Env var: LLM_API_KEY
+# llm_api_key = "local"
+
+# Context window in tokens. Must match your model's actual context size.
+# Env var: STRIX_CONTEXT_WINDOW_TOKENS
+# context_window = 110080
+
+# Disable streaming — required for some local providers.
+# Env var: ENGAGE_DISABLE_STREAMING
+# disable_streaming = false
+
+# Default Docker sandbox image used for every engagement and smoke test.
+# Saves passing --sandbox-image on every invocation.
+# Env var: ENGAGE_SANDBOX_IMAGE
+# sandbox_image = "wowbagger-sandbox:local"
+# sandbox_image = "ghcr.io/THE-M0P/wowbagger:latest"
+
+# Path to this evals repo root (used only for git commit recording in manifests).
+# Auto-detected from the installed package location; only set this if that fails.
+# Env var: ENGAGE_EVALS_REPO
+# evals_repo_dir = "~/src/wowbagger/evals"

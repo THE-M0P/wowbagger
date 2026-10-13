@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""container-escape — enumerate container escape vectors.
+
+Checks for common privilege escalation paths from inside a container:
+--privileged mode, writable docker.sock, dangerous capabilities,
+cgroup v1 release_agent, writable /proc paths, host pid/net namespace.
+
+Usage:
+  container-escape
+"""
+import os, sys, json, glob, stat
+
+def check_privileged():
+    # /proc/self/status has CapEff line
+    try:
+        for line in open("/proc/self/status"):
+            if line.startswith("CapEff:"):
+                caps = int(line.split()[1], 16)
+                # CAP_SYS_ADMIN = bit 21
+                if caps & (1 << 21):
+                    return {"status": "VULN", "detail": f"CapEff={hex(caps)} includes CAP_SYS_ADMIN"}
+        return {"status": "ok", "detail": "CAP_SYS_ADMIN not set"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+def check_docker_sock():
+    sock = "/var/run/docker.sock"
+    if os.path.exists(sock):
+        s = os.stat(sock)
+        writable = bool(s.st_mode & 0o002) or os.access(sock, os.W_OK)
+        return {"status": "VULN" if writable else "present_not_writable",
+                "detail": f"docker.sock exists, writable={writable}"}
+    return {"status": "ok", "detail": "docker.sock not mounted"}
+
+def check_caps():
+    dangerous = {
+        21: "CAP_SYS_ADMIN", 20: "CAP_SYS_PTRACE", 22: "CAP_SYS_BOOT",
+        6: "CAP_SETUID", 7: "CAP_SETGID", 19: "CAP_SYS_CHROOT",
+        8: "CAP_SETPCAP", 17: "CAP_SYS_RAWIO", 2: "CAP_DAC_OVERRIDE",
+    }
+    try:
+        for line in open("/proc/self/status"):
+            if line.startswith("CapEff:"):
+                caps = int(line.split()[1], 16)
+                found = [name for bit, name in dangerous.items() if caps & (1 << bit)]
+                return {"status": "VULN" if found else "ok", "caps": found, "CapEff": hex(caps)}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+    return {"status": "ok", "caps": []}
+
+def check_cgroup_release_agent():
+    # Look for writable cgroup v1 release_agent
+    vulns = []
+    for path in glob.glob("/sys/fs/cgroup/*/release_agent"):
+        try:
+            if os.access(path, os.W_OK):
+                vulns.append(path)
+        except Exception:
+            pass
+    if vulns:
+        return {"status": "VULN", "detail": f"writable release_agent: {vulns}",
+                "exploit_hint": "echo '#!/bin/sh\\nid > /output' > /cmd && chmod +x /cmd && echo /cmd > <release_agent> && echo 1 > notify_on_release"}
+    return {"status": "ok", "detail": "no writable cgroup release_agent found"}
+
+def check_proc_mem():
+    # Can we write to /proc/1/mem? (requires ptrace cap)
+    try:
+        with open("/proc/1/mem", "rb"):
+            return {"status": "VULN", "detail": "/proc/1/mem readable — ptrace on PID 1 possible"}
+    except PermissionError:
+        return {"status": "ok", "detail": "/proc/1/mem not accessible"}
+    except Exception as e:
+        return {"status": "ok", "detail": str(e)}
+
+def check_host_ns():
+    results = {}
+    for ns in ("pid", "net", "mnt", "uts", "ipc"):
+        own = f"/proc/self/ns/{ns}"
+        init = f"/proc/1/ns/{ns}"
+        try:
+            if os.readlink(own) == os.readlink(init):
+                results[ns] = "SHARED_WITH_HOST"
+            else:
+                results[ns] = "isolated"
+        except Exception:
+            results[ns] = "unknown"
+    vuln = [k for k, v in results.items() if v == "SHARED_WITH_HOST"]
+    return {"status": "VULN" if vuln else "ok", "namespaces": results, "shared": vuln}
+
+def check_sensitive_mounts():
+    vulns = []
+    try:
+        for line in open("/proc/mounts"):
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            dev, mnt, fstype = parts[0], parts[1], parts[2]
+            if fstype in ("sysfs", "proc") and mnt not in ("/sys", "/proc"):
+                vulns.append({"mount": mnt, "type": fstype, "dev": dev})
+            if dev == "overlay" and mnt == "/":
+                continue  # normal container root
+            if "/host" in mnt or mnt in ("/", "/etc", "/var"):
+                if dev.startswith("/dev/"):
+                    vulns.append({"mount": mnt, "type": fstype, "dev": dev, "note": "host device mounted"})
+    except Exception:
+        pass
+    return {"status": "VULN" if vulns else "ok", "suspicious_mounts": vulns}
+
+def main():
+    results = {
+        "privileged_caps": check_privileged(),
+        "docker_sock": check_docker_sock(),
+        "dangerous_caps": check_caps(),
+        "cgroup_release_agent": check_cgroup_release_agent(),
+        "proc_mem": check_proc_mem(),
+        "host_namespaces": check_host_ns(),
+        "sensitive_mounts": check_sensitive_mounts(),
+    }
+
+    vulns = [k for k, v in results.items() if isinstance(v, dict) and v.get("status") == "VULN"]
+    results["summary"] = {
+        "vulnerable_checks": vulns,
+        "escape_likely": len(vulns) > 0,
+    }
+    print(json.dumps(results, indent=2))
+
+if __name__ == "__main__":
+    main()
