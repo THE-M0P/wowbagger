@@ -48,7 +48,7 @@ nm -D "$BINARY" 2>/dev/null | grep -E "gets|strcpy|strcat|sprintf|scanf|system|p
 
 ```bash
 # Analyze and list all functions (JSON output for compact reading)
-r2 -A "$BINARY" -q -c 'aflj' 2>/dev/null | python3 -c "
+r2 -A -q -c 'aflj' "$BINARY" 2>/dev/null | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read() or '[]')
 # Sort by size, show largest (most complex) functions first
@@ -57,7 +57,7 @@ for f in sorted(data, key=lambda x: -x.get('size',0))[:30]:
 " 2>/dev/null
 
 # Disassemble main
-r2 -A "$BINARY" -q -c 'pdj 80 @ main' 2>/dev/null | python3 -c "
+r2 -A -q -c 'pdj 80 @ main' "$BINARY" 2>/dev/null | python3 -c "
 import sys, json
 ops = json.loads(sys.stdin.read() or '[]')
 for op in ops:
@@ -65,14 +65,14 @@ for op in ops:
 "
 
 # Find dangerous function calls
-r2 -A "$BINARY" -q -c 'afl~gets\nafl~strcpy\nafl~sprintf\nafl~scanf\nafl~system' 2>/dev/null
+r2 -A -q -c 'afl~gets\nafl~strcpy\nafl~sprintf\nafl~scanf\nafl~system' "$BINARY" 2>/dev/null
 
 # Cross-references to dangerous functions
-r2 -A "$BINARY" -q -c "axt sym.imp.gets" 2>/dev/null
-r2 -A "$BINARY" -q -c "axt sym.imp.system" 2>/dev/null
+r2 -A -q -c "axt sym.imp.gets" "$BINARY" 2>/dev/null
+r2 -A -q -c "axt sym.imp.system" "$BINARY" 2>/dev/null
 
 # Find strings that look like format strings or shell commands
-r2 -A "$BINARY" -q -c 'izzj' 2>/dev/null | python3 -c "
+r2 -A -q -c 'izzj' "$BINARY" 2>/dev/null | python3 -c "
 import sys, json
 data = json.loads(sys.stdin.read() or '[]')
 for s in data:
@@ -265,7 +265,7 @@ python3 /tmp/exploit.py
 | Tool | Purpose | Key invocation |
 |---|---|---|
 | checksec | Binary protection flags (NX, canary, PIE, RELRO, FORTIFY) | `checksec --file="$BINARY"` |
-| r2 / radare2 | Static disassembly, function listing, cross-references, decompile | `r2 -A "$BINARY" -q -c 'aflj'` (JSON output) |
+| r2 / radare2 | Static disassembly, function listing, cross-references, decompile | `r2 -A -q -c 'aflj' "$BINARY"` (JSON output) |
 | r2pipe | Python bindings for radare2 — programmatic analysis | `python3 -c "import r2pipe; r=r2pipe.open('$BIN'); print(r.cmdj('aflj'))"` |
 | binwalk | Firmware analysis: extract embedded filesystems, find offsets | `binwalk firmware.bin \| binwalk-parse -` |
 | ghidra-headless | Headless decompilation of complex binaries | `ghidra-headless /tmp/proj NewProj -import "$BINARY" -deleteProject` |

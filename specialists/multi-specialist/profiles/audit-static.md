@@ -77,7 +77,8 @@ curl -s "http://TARGET/<endpoint>?<param>=<%= 7*7 %>" | grep -o "49"
 
 ```bash
 # Out-of-band: use interactsh for blind injection
-OAST=$(interactsh-client -json 2>/dev/null & sleep 2; cat /tmp/oast.json 2>/dev/null | head -1)
+interactsh-client -server oast.pro > /tmp/oast-ci.log 2>&1 &
+sleep 2 && grep -m1 '\.oast\.' /tmp/oast-ci.log  # confirm URL registered
 # Or use a simple sleep test
 time curl -s "http://TARGET/<endpoint>" \
   -d "<param>=test; sleep 5 #" > /dev/null

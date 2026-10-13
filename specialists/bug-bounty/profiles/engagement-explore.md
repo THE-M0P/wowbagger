@@ -131,7 +131,7 @@ Do not report as findings:
   ```
 - For CVE PoC lookup, work through the hierarchy in order:
   1. `searchsploit CVE-XXXX-XXXX`
-  2. `find ~/nuclei-templates -name '*CVE-XXXX-XXXX*'`
+  2. `find ~/.local/nuclei-templates -name '*CVE-XXXX-XXXX*'`
   3. Advisory URL from package-intel.json
   4. GitHub PoC repos as fallback
   5. `web_search` only when all above yield nothing

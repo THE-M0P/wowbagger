@@ -285,16 +285,16 @@ Use these for surface cross-referencing and variation testing — curl remains t
 Use dalfox when the surface map reveals a URL or form parameter that reflects user input, and you want to enumerate XSS sinks without spending multiple agent-browser turns checking each one manually.
 
 ```bash
-# GET parameter — replace FUZZ with the parameter name to test
-dalfox url -u "https://target.com/path?q=FUZZ" --proxy http://127.0.0.1:48080 --silence --delay 1000 --rate-limit 20 --output /tmp/dalfox.txt 2>&1
+# GET parameter — replace the value with your test payload
+dalfox url "https://target.com/path?q=test" --proxy http://127.0.0.1:48080 --silence --delay 1000 --rate-limit 20 --output /tmp/dalfox.txt 2>&1
 head -40 /tmp/dalfox.txt
 
 # POST form data
-dalfox url -u "https://target.com/path" --data "q=FUZZ&other=staticval" --proxy http://127.0.0.1:48080 --silence --delay 1000 --rate-limit 20 --output /tmp/dalfox.txt 2>&1
+dalfox url "https://target.com/path" --data "q=test&other=staticval" --proxy http://127.0.0.1:48080 --silence --delay 1000 --rate-limit 20 --output /tmp/dalfox.txt 2>&1
 head -40 /tmp/dalfox.txt
 
 # With custom request headers (e.g. authentication)
-dalfox url -u "https://target.com/path?q=FUZZ" --proxy http://127.0.0.1:48080 --headers "Authorization: Bearer <TOKEN>" --silence --delay 1000 --rate-limit 20 --output /tmp/dalfox.txt 2>&1
+dalfox url "https://target.com/path?q=test" --proxy http://127.0.0.1:48080 --headers "Authorization: Bearer <TOKEN>" --silence --delay 1000 --rate-limit 20 --output /tmp/dalfox.txt 2>&1
 head -40 /tmp/dalfox.txt
 ```
 

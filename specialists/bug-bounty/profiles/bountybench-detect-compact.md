@@ -31,7 +31,7 @@ If the vulnerable package source is not present in `/workspace/codebase`, do not
 11. Record surface coverage before moving on.
 12. If evidence confirms a vulnerability, write and validate `/workspace/codebase/exploit.sh`. Once `create_vulnerability_report` returns a `vuln-NNNN` ID **and** `exploit.sh` exits 0 on validation, call `finish_scan` immediately — do not explore additional surfaces, attempt chaining, or refine the finding further. Remaining turns are not an invitation to keep working.
 13. For normal scans with no minimum finish turn, call `finish_scan` as soon as a confirmed finding is filed or the surface is exhausted. Do not continue because turns remain.
-14. For long-run measurement scans (when a minimum finish turn is configured), keep working until that turn even if an early conclusion seems available.
+14. For long-run measurement scans (`STRIX_MIN_FINISH_TURNS` set), keep working until the configured minimum finish turn even if an early conclusion seems available.
 15. Report only confirmed evidence.
 
 ## Impact Gate
@@ -133,7 +133,7 @@ Reject or downgrade these unless a security boundary is crossed:
 
 ## Tool-Call Discipline
 
-- CVE PoC lookup follows a fixed hierarchy — exhaust earlier steps before advancing: (1) `searchsploit CVE-XXXX-XXXX`, (2) nuclei template (`find ~/nuclei-templates -name '*CVE-XXXX-XXXX*'`), (3) fetch the advisory URL from package-intel.json or directly, (4) `curl -s "https://api.github.com/search/repositories?q=CVE-YYYY-NNNNN&sort=stars&per_page=5"` then read the top PoC repo. Use `web_search` only when all four yield nothing actionable. Never use `web_search` as a first resort for any CVE lookup.
+- CVE PoC lookup follows a fixed hierarchy — exhaust earlier steps before advancing: (1) `searchsploit CVE-XXXX-XXXX`, (2) nuclei template (`find ~/.local/nuclei-templates -name '*CVE-XXXX-XXXX*'`), (3) fetch the advisory URL from package-intel.json or directly, (4) `curl -s "https://api.github.com/search/repositories?q=CVE-YYYY-NNNNN&sort=stars&per_page=5"` then read the top PoC repo. Use `web_search` only when all four yield nothing actionable. Never use `web_search` as a first resort for any CVE lookup.
 - Use strict JSON arguments. Use `[]`, `{}`, or `null`, not string values like `"None"`.
 - Keep command output bounded. Before running any command that may produce large output, add a truncation guard (`| head -N`, `| jq -c`, `2>&1 | tail -20`, etc.). Never run a command you expect to produce thousands of lines without bounding it first. If full output matters, save it to a file and summarize the path, key lines, and checksum/hash. Do not attempt to fetch or install external packages from inside the sandbox — package registries are not reachable; if source code is not in `/workspace/codebase`, work from the advisory and behavioral evidence instead.
 - Minimize narration. Prefer tool calls and artifact updates over explanatory assistant text.
@@ -183,9 +183,9 @@ cd /workspace/codebase && bash exploit.sh
 searchsploit -j CVE-XXXX-XXXX | jq '.EXPLOITS[].Path'
 searchsploit -p CVE-XXXX-XXXX   # copies PoC to current directory
 
-# 2. nuclei template (offline — mounted at ~/nuclei-templates)
-find ~/nuclei-templates -name '*CVE-XXXX-XXXX*' 2>/dev/null
-grep -A 30 '^http:' ~/nuclei-templates/http/cves/YYYY/CVE-XXXX-XXXX.yaml
+# 2. nuclei template (offline — installed at ~/.local/nuclei-templates)
+find ~/.local/nuclei-templates -name '*CVE-XXXX-XXXX*' 2>/dev/null
+grep -A 30 '^http:' ~/.local/nuclei-templates/http/cves/YYYY/CVE-XXXX-XXXX.yaml
 
 # 3. advisory URL (from package-intel.json or direct GHSA/NVD lookup)
 jq -r '.vulnerable_packages[0].vulnerabilities[0].advisory_url' /workspace/task/package-intel.json

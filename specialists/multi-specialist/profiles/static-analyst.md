@@ -50,25 +50,27 @@ for r in highs[:20]:
     print(r['issue_severity'], r['filename'].split('src/')[-1]+':'+str(r['line_number']), r['issue_text'])
 " 2>/dev/null || echo "bandit: no Python source or failed"
 
-# ESLint security — JavaScript/TypeScript
-# Write a temp config so eslint-plugin-security rules are active
-cat > /tmp/.eslintrc.json << 'ESLINT'
-{
-  "plugins": ["security"],
-  "rules": {
-    "security/detect-sql-injection": "error",
-    "security/detect-eval-with-expression": "error",
-    "security/detect-non-literal-regexp": "warn",
-    "security/detect-object-injection": "warn",
-    "security/detect-non-literal-fs-filename": "warn",
-    "security/detect-child-process": "error"
+# ESLint security — JavaScript/TypeScript (v10 flat config)
+cat > /tmp/eslint.config.mjs << 'ESLINTEOF'
+import secPlugin from '/home/pentester/.npm-global/lib/node_modules/eslint-plugin-security/index.js';
+export default [
+  {
+    plugins: { security: secPlugin },
+    rules: {
+      "security/detect-sql-injection": "error",
+      "security/detect-eval-with-expression": "error",
+      "security/detect-non-literal-regexp": "warn",
+      "security/detect-object-injection": "warn",
+      "security/detect-non-literal-fs-filename": "warn",
+      "security/detect-child-process": "error"
+    }
   }
-}
-ESLINT
+];
+ESLINTEOF
 cd /opt/app/src && NODE_PATH=/home/pentester/.npm-global/lib/node_modules \
   npx --prefix /home/pentester/.npm-global eslint \
-  --no-eslintrc -c /tmp/.eslintrc.json \
-  --ext .js,.ts --format json . 2>/dev/null | python3 -c "
+  --config /tmp/eslint.config.mjs \
+  --format json . 2>/dev/null | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)

@@ -228,14 +228,14 @@ check_json "tplmap-parse" "$(printf '[+] Tplmap v0.5\n[+] Smarty template inject
 check_json "binwalk-parse" "$(printf 'DECIMAL       HEXADECIMAL     DESCRIPTION\n0             0x0             ELF, 64-bit LSB executable\n4096          0x1000          gzip compressed data\n' | binwalk-parse -)"
 
 # --- env-dump ---
-check_json "env-dump" "$(env-dump 2>/dev/null)"
+check_json "env-dump" "$(env-dump --direct 2>/dev/null)"
 
 # --- docker-probe ---
 check_json "docker-probe" "$(docker-probe 2>/dev/null)"
 
 # --- cloud-metadata-probe ---
 # Will find no cloud metadata on loopback — should return empty hits gracefully
-check_json "cloud-metadata-probe" "$(cloud-metadata-probe 2>/dev/null)"
+check_json "cloud-metadata-probe" "$(cloud-metadata-probe --direct 2>/dev/null)"
 
 # --- container-escape ---
 container-escape --help 2>&1 | head -2 && ok "container-escape (help)" || fail "container-escape" "help returned non-zero"

@@ -164,11 +164,11 @@ for line in sys.stdin:
 
 ```bash
 # Extract all JS files
-katana -u http://TARGET/ -json -o /tmp/katana.json -silent -d 3 -jc 2>/dev/null
+katana -u http://TARGET/ -j -o /tmp/katana.jsonl -silent -d 3 -jc 2>/dev/null
 # Get all JS URLs
 python3 -c "
 import json
-for line in open('/tmp/katana.json'):
+for line in open('/tmp/katana.jsonl'):
     d = json.loads(line)
     ep = d.get('request', {}).get('endpoint', '')
     if '.js' in ep and 'node_modules' not in ep:
