@@ -67,6 +67,7 @@ RUN apt-get update && \
     software-properties-common \
     gcc libc6-dev \
     python3 python3-pip python3-venv python3-setuptools \
+    python3.13 python3.13-venv \
     net-tools dnsutils whois \
     file xxd \
     jq parallel ripgrep grep \
@@ -107,7 +108,8 @@ RUN apt-get update && \
     padbuster \
     feroxbuster \
     libxmlsec1-dev pkg-config \
-    wapiti theharvester
+    wapiti theharvester \
+    bsdmainutils
 
 RUN go telemetry off
 
@@ -421,12 +423,13 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 RUN mkdir -p /workspace && chown -R pentester:pentester /workspace /app
 
 USER pentester
+# Main venv (Python 3.14) — web/API/crypto tools
 RUN python3 -m venv /app/.venv && \
     /app/.venv/bin/pip install --no-cache-dir caido-sdk-client && \
     /app/.venv/bin/pip install --no-cache-dir \
         requests httpx beautifulsoup4 lxml pyjwt cryptography \
         pycryptodome aiohttp pyotp boto3 graphw00f clairvoyance r2pipe && \
-    /app/.venv/bin/pip install --no-cache-dir angr pwntools cloud_enum || true && \
+    /app/.venv/bin/pip install --no-cache-dir cloud_enum || true && \
     { /app/.venv/bin/pip install --no-cache-dir python3-saml || true; } && \
     /app/.venv/bin/pip install --no-cache-dir -r /home/pentester/tools/jwt_tool/requirements.txt && \
     printf '%s\n' \
@@ -434,6 +437,13 @@ RUN python3 -m venv /app/.venv && \
         'exec /app/.venv/bin/python /home/pentester/tools/jwt_tool/jwt_tool.py "$@"' \
         > /home/pentester/.local/bin/jwt_tool && \
     chmod +x /home/pentester/.local/bin/jwt_tool
+
+# Binary exploitation venv (Python 3.13) — pwntools and angr have no Python 3.14 wheels;
+# bitstring<4.0 pins pyvex to the API it expects (ConstBitStream removed in v4)
+RUN python3.13 -m venv /app/.venv313 && \
+    /app/.venv313/bin/pip install --no-cache-dir pwntools && \
+    /app/.venv313/bin/pip install --no-cache-dir angr "bitstring<4.0"
+
 # jwt_tool 2.3.0 + Python 3.14: configparser.write() raises InvalidWriteError on
 # keys containing ':' (used as comment stubs in jwt_tool's config). Skip createConfig()
 # entirely by pre-writing a clean jwtconf.ini and generating the RSA/EC keys directly.
