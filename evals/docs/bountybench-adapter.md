@@ -58,7 +58,7 @@ Eval runs require Docker group access. Use `engage run` (the current CLI):
 ```bash
 engage run --mode whitebox \
   --project fastapi --bounty 0 \
-  --engagement ~/strix-runs/engagements/fastapi/chain-001 \
+  --engagement ~/engagements/fastapi/chain-001 \
   --rounds 5 --stop-on-dry-runs 2 \
   --llm anthropic/claude-sonnet-5-5
 ```
@@ -68,7 +68,7 @@ For local models (requires `LLM_API_BASE` pointing to a running llama-server or 
 ```bash
 engage run --mode whitebox \
   --project fastapi --bounty 0 \
-  --engagement ~/strix-runs/engagements/fastapi/chain-001 \
+  --engagement ~/engagements/fastapi/chain-001 \
   --rounds 5 \
   --llm openai/<model-name> \
   --llm-api-base http://localhost:11434/v1 \

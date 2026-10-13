@@ -8,7 +8,7 @@ You are the explorer in a multi-session CVE research pipeline targeting a self-h
 
 **Attacker boundary:** Full access to the self-hosted instance and its services. You may:
 - Run automated tools (sqlmap, ffuf, nuclei, nikto, feroxbuster) — the instance is isolated
-- Test SSRF freely — use `http://10.10.10.156/` targets for SSRF PoC (do not probe external internet)
+- Test SSRF freely — use the instance's own IP for SSRF PoC (do not probe external internet)
 - Read source code on GitHub to understand authorization logic for any route of interest
 - Send state-changing requests at any rate — no real users, no production data
 - Create, modify, and delete test data freely (but keep Account A and Account B intact for cross-account testing)
@@ -112,7 +112,7 @@ interactsh-client -server oast.pro -poll-interval 5 > /tmp/oast.log 2>&1 &
 sleep 3 && grep -m1 '\.oast\.' /tmp/oast.log
 ```
 
-Since the instance is isolated, SSRF PoC can also use `http://10.10.10.156:6379/` (Redis, localhost-only) or `http://10.10.10.156:5432/` (Postgres) as internal targets — an outbound request to these proves SSRF without needing an external callback.
+Since the instance is isolated, SSRF PoC can also use the target's Redis port (6379) or Postgres port (5432) as internal targets — an outbound request to these proves SSRF without needing an external callback.
 
 **3d. Write or update app-model.md:**
 
@@ -232,7 +232,7 @@ Summary: surfaces tested, findings documented, anything that slowed you. **Keep 
 
 4. **Mass assignment / parameter pollution:** create/update endpoints that accept extra fields and change state. Add undocumented fields (`role`, `admin`, `is_owner`, `org_id`).
 
-5. **SSRF via application features:** LLM endpoint config (`LANGFUSE_AI_BASE_URL`), webhook URLs, media upload redirect. Supply internal addresses (`http://10.10.10.156:6379/`, `http://10.10.10.156:5432/`).
+5. **SSRF via application features:** LLM endpoint config, webhook URLs, media upload redirect. Supply internal addresses (e.g. `http://$TARGET_HOST:6379/` for Redis, `http://$TARGET_HOST:5432/` for Postgres).
 
 6. **Business logic flaws:** state machine bypass, race conditions on resource limits, eval execution triggering unintended outbound requests.
 
@@ -331,9 +331,9 @@ Maximum 3 consecutive agent-browser turns per hypothesis.
 
 **Caido proxy tools:**
 
-- `scope_rules(action="create", scope_name="target", allowlist=["10.10.10.156"])` — filter sitemap to the instance.
+- `scope_rules(action="create", scope_name="target", allowlist=["$TARGET_HOST"])` — filter sitemap to the instance.
 - `list_sitemap()` — browse captured endpoints.
-- `list_requests(httpql_filter="req.host.eq:\"10.10.10.156\"", first=50)` — list captured requests.
+- `list_requests(httpql_filter="req.host.eq:\"$TARGET_HOST\"", first=50)` — list captured requests.
 - `view_request(request_id="...", part="response")` — inspect full response body.
 - `repeat_request(request_id="...", modifications={"headers": {"Authorization": "Bearer <ACCOUNT_B_TOKEN>"}})` — auth-swap test.
 
@@ -341,17 +341,17 @@ Maximum 3 consecutive agent-browser turns per hypothesis.
 
 ```bash
 # sqlmap on a specific parameter (after you have a candidate endpoint)
-sqlmap -u "http://10.10.10.156:3000/api/public/traces?traceId=FUZZ" \
+sqlmap -u "http://$TARGET_HOST:3000/api/public/traces?traceId=FUZZ" \
   --header "Authorization: Basic <b64>" --batch --level 1 --risk 1 \
   --output-dir /tmp/sqlmap-out 2>&1 | tail -20
 
 # nuclei — targeted templates only (not full scan)
-nuclei -u http://10.10.10.156:3000 -t /home/pentester/.local/nuclei-templates/http/technologies/ \
+nuclei -u http://$TARGET_HOST:3000 -t /home/pentester/.local/nuclei-templates/http/technologies/ \
   -silent -o /tmp/nuclei-tech.txt 2>&1
 head -20 /tmp/nuclei-tech.txt
 
 # ffuf — directory/parameter fuzzing
-ffuf -u "http://10.10.10.156:3000/api/public/FUZZ" \
+ffuf -u "http://$TARGET_HOST:3000/api/public/FUZZ" \
   -H "Authorization: Basic <b64>" \
   -w /usr/share/wordlists/dirb/common.txt -mc 200,301,302,401,403 \
   -o /tmp/ffuf-out.json -of json 2>&1 | tail -5

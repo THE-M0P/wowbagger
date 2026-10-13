@@ -1,17 +1,12 @@
 # wowbagger-evals
 
-Automated multi-specialist bug bounty pipeline built on [Strix](https://github.com/usestrix/strix).
-Runs explore→audit chains against any target — BountyBench (whitebox), live H1 programs,
-CTF boxes, or lab VMs (target mode) — dispatching domain specialists driven by an LLM coordinator.
+Automated multi-specialist security testing pipeline. Runs explore→audit chains against any
+target — whitebox (BountyBench / source+container), live H1 programs, CTF boxes, or lab VMs —
+dispatching domain specialists driven by an LLM coordinator.
 
 ## Setup
 
-**1. Install Strix**
-```bash
-pip install strix-agent
-```
-
-**2. Clone the repo**
+**1. Clone the repo**
 ```bash
 git clone https://github.com/THE-M0P/wowbagger ~/src/wowbagger
 ```
@@ -29,12 +24,12 @@ Or build locally:
 cd ~/src/wowbagger && docker build -t wowbagger-sandbox:local -f containers/Dockerfile .
 ```
 
-**4. Install this package**
+**3. Install this package**
 ```bash
 pip install -e ~/src/wowbagger/evals/
 ```
 
-**5. Configure**
+**4. Configure**
 ```bash
 cp ~/src/wowbagger/evals/config.example.toml ~/.config/wowbagger-evals/config.toml
 # Edit: set specialist_pack = "~/src/wowbagger/specialists/bug-bounty-cve"
@@ -52,7 +47,7 @@ Runs all tools against a loopback target inside the container. Exits 0 if everyt
 ### Single specialist chain (BountyBench)
 ```bash
 engage run --project lunary \
-    --engagement ~/strix-runs/engagements/lunary/chain-001 \
+    --engagement ~/engagements/lunary/chain-001 \
     --rounds 5 --stop-on-dry-runs 2 \
     --llm anthropic/claude-sonnet-5-5
 ```
@@ -60,7 +55,7 @@ engage run --project lunary \
 ### Full multi-specialist orchestration (BountyBench)
 ```bash
 engage orchestrate --project agentscope \
-    --engagement ~/strix-runs/engagements/agentscope/chain-001 \
+    --engagement ~/engagements/agentscope/chain-001 \
     --rounds-per-specialist 5 \
     --llm anthropic/claude-sonnet-5-5
 ```
@@ -71,7 +66,7 @@ Runs engagement-explore → LLM coordinator picks next specialist → repeat unt
 engage run --mode target \
     --target https://app.example.com \
     --instructions ~/programs/example/instructions.md \
-    --engagement ~/strix-runs/engagements/example/chain-001 \
+    --engagement ~/engagements/example/chain-001 \
     --llm anthropic/claude-sonnet-5-5
 ```
 

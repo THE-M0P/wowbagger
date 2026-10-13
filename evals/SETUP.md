@@ -78,7 +78,7 @@ engage smoke \
 > `cache_control_injection_points` TypeError.
 
 Exits 0 if everything passes. Look for `PASS — all tools verified` in the output.
-Report from the run lands in `~/strix-runs/smoke/smoke-<timestamp>/smoke-report.md`.
+Report from the run lands in `~/wowbagger-runs/smoke/smoke-<timestamp>/smoke-report.md`.
 
 Note: smoke auto-selects the `bug-bounty-cve` pack (which contains `smoke-test.md`).
 You can override with `--specialist-pack <path>`.
@@ -89,7 +89,7 @@ You can override with `--specialist-pack <path>`.
 ```bash
 engage run --mode whitebox \
   --project lunary \
-  --engagement ~/strix-runs/engagements/lunary/chain-001 \
+  --engagement ~/engagements/lunary/chain-001 \
   --rounds 3 --stop-on-dry-runs 2 \
   --llm anthropic/claude-sonnet-5-5
 ```
@@ -103,7 +103,7 @@ cp ~/src/wowbagger/specialists/bug-bounty-target/templates/instructions.md \
 engage run --mode target \
   --target https://app.example.com \
   --instructions ~/programs/example/instructions.md \
-  --engagement ~/strix-runs/engagements/example/chain-001 \
+  --engagement ~/engagements/example/chain-001 \
   --rounds 5 \
   --llm anthropic/claude-sonnet-5-5
 ```
@@ -112,7 +112,7 @@ engage run --mode target \
 ```bash
 engage orchestrate --mode whitebox \
   --project agentscope \
-  --engagement ~/strix-runs/engagements/agentscope/chain-001 \
+  --engagement ~/engagements/agentscope/chain-001 \
   --rounds-per-specialist 5 \
   --llm anthropic/claude-sonnet-5-5
 ```
