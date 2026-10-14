@@ -163,6 +163,7 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         "turn": 0,
         "max_turns": None,
         "context_pressure": 0.0,
+        "compactions": 0,
         "thinking": False,
         "thinking_since": None,
         "recent_tools": [],
@@ -231,6 +232,8 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         last_end = llm_ends[-1]
         state["context_pressure"] = last_end.get("input_context_pressure", 0.0)
 
+    state["compactions"] = sum(1 for e in events if e.get("kind") == "context_compaction_skip")
+
     # Are we currently thinking? (last event is llm_start, no matching llm_end)
     if events:
         last_event = events[-1]
@@ -288,6 +291,7 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
     findings    = state.get("findings", {})
     elapsed     = state.get("elapsed", 0)
     thinking    = state.get("thinking", False)
+    compactions = state.get("compactions", 0)
     recent      = state.get("recent_tools", [])
     current_run = state.get("current_run") or "—"
     active_profile = state.get("active_profile")
@@ -328,7 +332,8 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
     else:
         profile_display = _c(active_profile, _BOLD, _CYAN) if active_profile else ""
         sp_label = f"Run  {profile_display}" if active_profile else "Run"
-    turn_part = f"  Turn {_c(str(turn), _BOLD)}/{max_turns}"
+    compact_str = f"  {_c(f'compact×{compactions}', _BYELLOW)}" if compactions else ""
+    turn_part = f"  Turn {_c(str(turn), _BOLD)}/{max_turns}{compact_str}"
     ctx_bar = _bar(ctx_pct, 16)
     ctx_pct_str = f"{int(ctx_pct * 100)}%"
     if ctx_pct >= 0.80:
@@ -427,6 +432,10 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
             m = re.search(r'Output: (.+)', out)
             if m:
                 out = m.group(1)
+            # Strip ANSI codes and non-printable chars from tool output
+            out = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', out)
+            out = re.sub(r'[^\x20-\x7e\t]', ' ', out)
+            out = out.strip()
 
         dur_str = f" ({dur_ms}ms)" if dur_ms is not None else ""
         tool_colored = _c(tool, _CYAN)
@@ -444,9 +453,8 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
     for ar in activity_rows:
         row(" " + ar if not ar.startswith(" ") else ar)
 
-    # Pad to fill terminal height so the box anchors to the bottom
-    used = len(lines) + len(activity_rows) + 1  # +1 for footer
-    for _ in range(max(0, term_h - used)):
+    # Pad to fill terminal height (activity rows already counted in lines)
+    for _ in range(max(0, term_h - len(lines) - 1)):  # -1 for footer
         row()
 
     lines.append("└" + "─" * inner + "┘")
