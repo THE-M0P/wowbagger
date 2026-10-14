@@ -34,7 +34,6 @@ import subprocess
 import sys
 import tempfile
 import types
-import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -724,7 +723,6 @@ def _smoke_passed(strix_rundir: Path) -> bool | None:
         return True
     if "overall **fail**" in text or "result: fail" in text:
         return False
-    import re
     m = re.search(r'(\d+)\s+fail', text)
     if m and int(m.group(1)) > 0:
         return False
@@ -942,8 +940,8 @@ def _save_chain_state(engagement_dir: Path, state: dict[str, Any]) -> None:
 def _make_specialist_pack(base_pack: Path, specialist_key: str, entry: dict, tmpdir: Path) -> Path:
     """Create a temp pack with the specialist's profiles as the standard filenames.
 
-    stage_engagement and bountybench.py expect profiles/engagement-explore.md and
-    profiles/audit-verify.md — this mapping lets run_chain work without modification.
+    stage_engagement expects profiles/engagement-explore.md and profiles/audit-verify.md
+    — this mapping lets run_chain work without modification.
     """
     pack_dir = tmpdir / specialist_key
     profiles_dir = pack_dir / "profiles"

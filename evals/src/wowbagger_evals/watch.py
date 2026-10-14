@@ -234,7 +234,7 @@ def _pressure_style(pct: float) -> str:
 def _clean_tool_output(out: str) -> str:
     out = re.sub(
         r'^Chunk ID: \S+\nWall time: [^\n]+\nProcess [^\n]+\nOutput:\n?',
-        '', out,
+        '', out, flags=re.MULTILINE,
     )
     out = re.sub(r'(?m)^[ \t]*[=\-]{4,}[ \t]*$', '', out)
     out = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', out)
