@@ -182,7 +182,11 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
     if llm_ends:
         state["context_pressure"] = llm_ends[-1].get("input_context_pressure", 0.0)
 
-    state["compactions"] = sum(1 for e in events if e.get("kind") == "context_compaction_skip")
+    state["compactions"] = sum(
+        1 for e in events
+        if e.get("kind") == "context_compaction_skip"
+        and e.get("reason") == "no_summary_room"
+    )
 
     if events:
         last_event = events[-1]
