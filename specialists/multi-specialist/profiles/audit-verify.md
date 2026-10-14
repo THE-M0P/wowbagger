@@ -55,7 +55,7 @@ For each `[pending-audit]` finding, in order:
 
 4. **Source code verification (use when available):** If the explorer referenced source code (file:line), fetch and read it:
    ```bash
-   curl -sS "https://raw.githubusercontent.com/langfuse/langfuse/main/<path>" | grep -A 30 "<function>"
+   curl -sS "https://raw.githubusercontent.com/<org>/<repo>/main/<path>" | grep -A 30 "<function>"
    ```
    Confirm: is the missing auth check visible in the code? Source confirmation upgrades confidence.
 
@@ -92,7 +92,7 @@ Rules:
 - When a confirmed anomaly merges into a verified finding, remove it from Anomalies.
 - Do not add findings you discovered yourself. Verifier only.
 - **Populate `## Leads`** from the explorer's `## Notes for Next Session`: extract specific actionable hypotheses not already captured as open anomalies. Format: `- [lead] <route or surface> — <hypothesis> (<what would confirm or rule it out>)`. Remove leads investigated this pass.
-- For verified findings: add or confirm the CVSS severity estimate and `Remediation` field. Include the GitHub Security Advisory submission note (version affected: 4.52.0).
+- For verified findings: add or confirm the CVSS severity estimate and `Remediation` field. Include the GitHub Security Advisory submission note (version affected: from `instructions.md`).
 
 ### Step 6 — Finish
 
@@ -147,7 +147,7 @@ Call `finish_scan`. Summary: findings verified/anomaly/ruled-out count, anomalie
 ## CVE Finding Quality Bar
 
 Before marking something `[verified]`, ask:
-- Would a Langfuse maintainer agree a security boundary was crossed?
+- Would the target application's maintainers agree a security boundary was crossed?
 - Is the impact concrete: data read/written that shouldn't be, privilege gained, server-side request forgery?
 - Is the proof reproducible by someone who has never seen this finding before, using only the curl commands in the report?
 - Is this a known-fixed issue (see `## Known Fixed Issues` in instructions.md)?
@@ -155,8 +155,8 @@ Before marking something `[verified]`, ask:
 If any answer is no, mark `[anomaly-active]` with a note on what is missing.
 
 For confirmed findings, the next step is a GitHub Security Advisory:
-`https://github.com/langfuse/langfuse/security/advisories/new`
-- Affected version: 4.52.0
+`https://github.com/<org>/<repo>/security/advisories/new` (repo URL from `instructions.md`)
+- Affected version: (from `instructions.md`)
 - Report as private advisory — do not disclose publicly
 - Include exact proof steps (the auditor-verified curl sequence)
 - GitHub will notify maintainers; they patch and request CVE ID from GitHub (the CNA)

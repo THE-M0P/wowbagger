@@ -1,7 +1,7 @@
 # wowbagger-evals
 
 Automated multi-specialist security testing pipeline. Runs explore→audit chains against any
-target — whitebox (BountyBench / source+container), live H1 programs, CTF boxes, or lab VMs —
+target — whitebox (source + container), live H1 programs, CTF boxes, or lab VMs —
 dispatching domain specialists driven by an LLM coordinator.
 
 ## Setup
@@ -95,6 +95,7 @@ or via environment variables:
 |---------|------------|--------------|
 | `STRIX_BIN` | `strix` | Path to strix binary (auto-detected if strix is in PATH) |
 | `ENGAGE_SPECIALIST_PACK` | `specialist_pack` | Whitebox specialist profiles |
+| `ENGAGE_SMOKE_SPECIALIST_PACK` | `smoke_specialist_pack` | Smoke-test specialist profiles (defaults to `specialist_pack` if unset) |
 | `ENGAGE_TARGET_SPECIALIST_PACK` | `target_specialist_pack` | Target specialist profiles (also accepts legacy `ENGAGE_H1_SPECIALIST_PACK`) |
 | `ENGAGE_SANDBOX_IMAGE` | `sandbox_image` | Docker image for every run |
 | `LLM_API_KEY` | — | API key (Anthropic or proxy) |

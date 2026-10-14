@@ -28,7 +28,7 @@
 
 # LLM API base URL — required for local models and proxies.
 # Env var: LLM_API_BASE
-# llm_api_base = "http://100.78.189.22:11436/v1"
+# llm_api_base = "http://localhost:11436/v1"
 
 # LLM API key — "local" works for most local providers.
 # Env var: LLM_API_KEY
