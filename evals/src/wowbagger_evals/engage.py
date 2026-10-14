@@ -606,12 +606,26 @@ def run_smoke(args: argparse.Namespace) -> int:
     for loop_num in range(1, max_loops + 1):
         all_tested = all_passed | all_failed
 
+        _REPORT_INSTRUCTIONS = (
+            "Write the final PASS/FAIL report to `/workspace/smoke-report.md` using bash "
+            "(exec_command), not the write_file tool — the file must land inside the container's "
+            "/workspace mount so the harness can read it. Format: one `PASS <toolname>` or "
+            "`FAIL <toolname> — <reason>` per line. Example:\n\n"
+            "```bash\n"
+            "cat > /workspace/smoke-report.md << 'REPORT'\n"
+            "PASS nmap\n"
+            "PASS gobuster\n"
+            "FAIL testssl — non-zero exit\n"
+            "REPORT\n"
+            "```\n"
+        )
+
         # Write per-loop instructions
         if loop_num == 1:
             instruction_file.write_text(
                 "# Smoke Test\n\n"
-                "Execute the full smoke test procedure defined in your root prompt.\n"
-                "Write the final report to `/workspace/smoke-report.md`.\n",
+                "Execute the full smoke test procedure defined in your root prompt.\n\n"
+                + _REPORT_INSTRUCTIONS,
                 encoding="utf-8",
             )
         else:
@@ -621,8 +635,8 @@ def run_smoke(args: argparse.Namespace) -> int:
                 "Execute the smoke test procedure defined in your root prompt.\n"
                 "The following tools were already tested in a previous run — **skip them entirely**:\n\n"
                 f"  {already_str}\n\n"
-                "Test only the remaining tools from the procedure. Write the report for this "
-                "run only (do not repeat the already-tested tools) to `/workspace/smoke-report.md`.\n",
+                "Test only the remaining tools from the procedure.\n\n"
+                + _REPORT_INSTRUCTIONS,
                 encoding="utf-8",
             )
             # Archive the previous loop's smoke-report so the agent writes a fresh one
@@ -651,8 +665,19 @@ def run_smoke(args: argparse.Namespace) -> int:
         if strix_runs_dir.is_dir():
             subprocess.run(["sudo", "chmod", "-R", "a+rX", str(strix_runs_dir)], check=False)
 
-        # Find and read smoke-report.md written by the agent
+        # Find smoke-report.md; fall back to any markdown with PASS/FAIL lines
         reports = [p for p in run_dir.rglob("smoke-report.md") if p.name == "smoke-report.md"]
+        if not reports:
+            # Agent may have used write_file (lands in strix_runs) instead of exec_command.
+            # Scan all markdown files for PASS/FAIL line content as a fallback.
+            for md in run_dir.rglob("*.md"):
+                try:
+                    text = md.read_text(encoding="utf-8", errors="replace")
+                    if any(l.startswith("PASS ") or l.startswith("FAIL ") for l in text.splitlines()):
+                        reports.append(md)
+                except OSError:
+                    pass
+
         if not reports:
             _log(f"FAIL — smoke-report.md not found (loop {loop_num}, strix may not have completed)")
             _notify("Engage — smoke FAIL", f"smoke-report.md not written (loop {loop_num})", notify)
