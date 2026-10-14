@@ -45,28 +45,27 @@ def _which(name: str) -> Path | None:
 # Resolved defaults — used as fallbacks when CLI flags are not provided
 # ---------------------------------------------------------------------------
 
-STRIX_BIN: Path | None = (
+STRIX_BIN: Path = (
     _resolve("STRIX_BIN", "strix")
     or _which("strix")
+    or Path("/home/JBHook/src/wowbagger/.venv/bin/strix")
 )
 
-BOUNTYBENCH_DIR: Path | None = (
-    _resolve("BOUNTYBENCH_DIR", "bountybench_dir")
-)
-
-SPECIALIST_PACK: Path | None = (
+SPECIALIST_PACK: Path = (
     _resolve("ENGAGE_SPECIALIST_PACK", "specialist_pack")
+    or Path("/home/JBHook/ai-lab/specialists/bug-bounty")
 )
 
 # Smoke-test pack — must contain profiles/smoke-test.md.
-# Defaults to specialist_pack above when not set.
-SMOKE_SPECIALIST_PACK: Path | None = (
+SMOKE_SPECIALIST_PACK: Path = (
     _resolve("ENGAGE_SMOKE_SPECIALIST_PACK", "smoke_specialist_pack")
+    or Path("/home/JBHook/ai-lab/specialists/multi-specialist")
 )
 
-TARGET_SPECIALIST_PACK: Path | None = (
+TARGET_SPECIALIST_PACK: Path = (
     _resolve("ENGAGE_TARGET_SPECIALIST_PACK", "target_specialist_pack")
     or _resolve("ENGAGE_H1_SPECIALIST_PACK", "h1_specialist_pack")  # legacy alias
+    or Path("/home/JBHook/ai-lab/specialists/bug-bounty-target")
 )
 
 # The evals repo itself — used only for git commit recording in manifests.

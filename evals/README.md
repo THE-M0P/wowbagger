@@ -47,24 +47,30 @@ Runs all tools against a loopback target inside the container. Exits 0 if everyt
 Report lands in `~/wowbagger-runs/smoke/smoke-<timestamp>/smoke-master-report.md`.
 With `--max-smoke-loops N` (default 5) it loops if the context runs out mid-test, picking up where it left off.
 
-### Single specialist chain (BountyBench)
+### Whitebox — source code + running container
 ```bash
-engage run --project lunary \
-    --engagement ~/wowbagger-runs/engagements/lunary/chain-001 \
+engage run --mode whitebox \
+    --codebase ~/src/myapp \
+    --target http://localhost:3000 \
+    --instructions ~/engagements/myapp/instructions.md \
+    --engagement ~/wowbagger-runs/engagements/myapp/chain-001 \
     --rounds 5 --stop-on-dry-runs 2 \
     --llm anthropic/claude-sonnet-5-5
 ```
 
-### Full multi-specialist orchestration (BountyBench)
+### Multi-specialist orchestration
 ```bash
-engage orchestrate --project agentscope \
-    --engagement ~/wowbagger-runs/engagements/agentscope/chain-001 \
+engage orchestrate --mode whitebox \
+    --codebase ~/src/myapp \
+    --target http://localhost:3000 \
+    --instructions ~/engagements/myapp/instructions.md \
+    --engagement ~/wowbagger-runs/engagements/myapp/chain-001 \
     --rounds-per-specialist 5 \
     --llm anthropic/claude-sonnet-5-5
 ```
 Runs engagement-explore → LLM coordinator picks next specialist → repeat until exhausted.
 
-### Live target (H1, CTF, lab)
+### Black-box target (H1, CTF, lab)
 ```bash
 engage run --mode target \
     --target https://app.example.com \
@@ -88,8 +94,7 @@ or via environment variables:
 | Env var | Config key | What it sets |
 |---------|------------|--------------|
 | `STRIX_BIN` | `strix` | Path to strix binary (auto-detected if strix is in PATH) |
-| `BOUNTYBENCH_DIR` | `bountybench_dir` | BountyBench clone root |
-| `ENGAGE_SPECIALIST_PACK` | `specialist_pack` | CVE/BountyBench specialist profiles |
+| `ENGAGE_SPECIALIST_PACK` | `specialist_pack` | Whitebox specialist profiles |
 | `ENGAGE_TARGET_SPECIALIST_PACK` | `target_specialist_pack` | Target specialist profiles (also accepts legacy `ENGAGE_H1_SPECIALIST_PACK`) |
 | `ENGAGE_SANDBOX_IMAGE` | `sandbox_image` | Docker image for every run |
 | `LLM_API_KEY` | — | API key (Anthropic or proxy) |
@@ -123,11 +128,10 @@ wowbagger/
     src/wowbagger_evals/
       config.py          ← central path resolution (env > config file > default)
       engage.py          ← engage run / orchestrate / smoke
-      bountybench.py     ← BountyBench benchmark adapter
     config.example.toml
     SETUP.md
   specialists/           ← specialist packs
-    bug-bounty/          ← whitebox mode (BountyBench)
+    bug-bounty/          ← whitebox mode (source + container)
     multi-specialist/    ← orchestrate + smoke (9 explorers, 9 auditors)
     bug-bounty-target/   ← target mode (H1, CTF, lab)
   .github/

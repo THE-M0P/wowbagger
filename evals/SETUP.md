@@ -88,11 +88,13 @@ You can override with `--specialist-pack <path>`.
 
 ## Running your first engagement
 
-**Whitebox (BountyBench):**
+**Whitebox (source code + running container):**
 ```bash
 engage run --mode whitebox \
-  --project lunary \
-  --engagement ~/engagements/lunary/chain-001 \
+  --codebase ~/src/myapp \
+  --target http://localhost:3000 \
+  --instructions ~/engagements/myapp/instructions.md \
+  --engagement ~/engagements/myapp/chain-001 \
   --rounds 3 --stop-on-dry-runs 2 \
   --llm anthropic/claude-sonnet-5-5
 ```
@@ -114,8 +116,10 @@ engage run --mode target \
 **Multi-specialist orchestration:**
 ```bash
 engage orchestrate --mode whitebox \
-  --project agentscope \
-  --engagement ~/engagements/agentscope/chain-001 \
+  --codebase ~/src/myapp \
+  --target http://localhost:3000 \
+  --instructions ~/engagements/myapp/instructions.md \
+  --engagement ~/engagements/myapp/chain-001 \
   --rounds-per-specialist 5 \
   --llm anthropic/claude-sonnet-5-5
 ```
@@ -144,7 +148,7 @@ On runs with many tools or verbose output the context fills long before `max-tur
 | Variable | What it sets |
 |----------|-------------|
 | `STRIX_BIN` | Path to strix binary |
-| `ENGAGE_SPECIALIST_PACK` | CVE/whitebox specialist pack path |
+| `ENGAGE_SPECIALIST_PACK` | Whitebox specialist pack path |
 | `ENGAGE_TARGET_SPECIALIST_PACK` | Target specialist pack path |
 | `ENGAGE_SANDBOX_IMAGE` | Docker image name |
 | `LLM_API_KEY` | API key for LLM |

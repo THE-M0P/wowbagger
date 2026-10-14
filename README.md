@@ -57,15 +57,18 @@ Full setup guide: [evals/SETUP.md](evals/SETUP.md)
 
 ### Whitebox — source + running container
 
-Run against a target with access to its source code and a running container
-(e.g. [BountyBench](https://github.com/clarriu97/bountybench)):
+Run against a target with access to its source code and a live container. Point `--codebase` at the repo and `--target` at the running app:
 
 ```bash
 engage run --mode whitebox \
-    --project lunary \
-    --engagement ~/engagements/lunary/chain-001 \
+    --codebase ~/src/myapp \
+    --target http://localhost:3000 \
+    --instructions ~/engagements/myapp/instructions.md \
+    --engagement ~/engagements/myapp/chain-001 \
     --rounds 5 --stop-on-dry-runs 2
 ```
+
+The agent gets shell access in the sandbox with the codebase mounted — it can run semgrep, grep, trufflehog, codeql, and any other static tool alongside live HTTP testing.
 
 ### Multi-specialist orchestration
 
@@ -73,8 +76,10 @@ An LLM coordinator reads the current findings and picks the best specialist to r
 
 ```bash
 engage orchestrate --mode whitebox \
-    --project lunary \
-    --engagement ~/engagements/lunary/chain-001 \
+    --codebase ~/src/myapp \
+    --target http://localhost:3000 \
+    --instructions ~/engagements/myapp/instructions.md \
+    --engagement ~/engagements/myapp/chain-001 \
     --rounds-per-specialist 5
 ```
 
@@ -181,7 +186,7 @@ SecLists is pre-installed at `/opt/SecLists`.
 |------|---------|----------|---------|
 | [`specialists/multi-specialist/`](specialists/multi-specialist/) | `engage orchestrate` | Whitebox · smoke test | 9 explorers + 9 auditors + smoke-test |
 | [`specialists/bug-bounty-target/`](specialists/bug-bounty-target/) | `engage run --mode target` | Black-box (H1, CTF, lab) | explorer + auditor |
-| [`specialists/bug-bounty/`](specialists/bug-bounty/) | `engage run --mode whitebox` | Single-specialist whitebox | explorer + auditor |
+| [`specialists/bug-bounty/`](specialists/bug-bounty/) | `engage run --mode whitebox` | Whitebox (source + container) | explorer + auditor |
 
 Each specialist pack is a directory of Markdown profiles. Profiles are the only thing the agent sees — swap them to change behavior without touching any code.
 

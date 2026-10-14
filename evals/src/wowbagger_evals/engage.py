@@ -4,12 +4,15 @@ Runs explore→audit rounds sequentially, stopping on consecutive dry runs
 or when the round limit is reached. Notifies on completion.
 
 Modes:
-  whitebox  White-box target: source code + running container (BountyBench)
+  whitebox  White-box target: source code + running container
   target    Black-box URL target: live app, H1 program, CTF box, lab VM
 
 Usage:
-  engage run --project lunary \\
-      --engagement ~/wowbagger-runs/engagements/lunary/chain-002 \\
+  engage run --mode whitebox \\
+      --codebase ~/src/myapp \\
+      --target http://localhost:3000 \\
+      --instructions ~/engagements/myapp/instructions.md \\
+      --engagement ~/wowbagger-runs/engagements/myapp/chain-001 \\
       --rounds 5 --stop-on-dry-runs 2
 
   engage run --mode target --target https://app.example.com \\
@@ -40,19 +43,13 @@ from urllib.parse import urlparse
 
 from wowbagger_evals.watch import run_watch
 from wowbagger_evals.bountybench import (
-    BountyBenchError,
-    build_plan,
     collect_engagement_artifacts,
-    execute_plan,
-    load_task,
     now_iso,
     stage_engagement,
     write_audit_profile,
-    write_plan,
 )
 from wowbagger_evals.config import (
     STRIX_BIN as _STRIX_DEFAULT,
-    BOUNTYBENCH_DIR as _BOUNTYBENCH_DEFAULT,
     SPECIALIST_PACK as _DEFAULT_SPECIALIST_PACK,
     TARGET_SPECIALIST_PACK as _TARGET_SPECIALIST_PACK,
     SMOKE_SPECIALIST_PACK as _SMOKE_SPECIALIST_PACK,
@@ -63,6 +60,10 @@ from wowbagger_evals.config import (
     CONTEXT_WINDOW as _CONTEXT_WINDOW_DEFAULT,
     DISABLE_STREAMING as _DISABLE_STREAMING_DEFAULT,
 )
+
+
+class EngageError(RuntimeError):
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -103,78 +104,156 @@ def _is_dry_run(engagement_dir: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# BountyBench target container lifecycle
-# ---------------------------------------------------------------------------
-
-def _compose_file(task_dir: Path) -> Path | None:
-    p = task_dir / "docker-compose.yml"
-    return p if p.is_file() else None
-
-
-def _start_target(task_dir: Path) -> bool:
-    """Start the BountyBench target container via docker compose. Returns True on success."""
-    compose = _compose_file(task_dir)
-    if compose is None:
-        _log(f"auto-start: no docker-compose.yml in {task_dir} — skipping")
-        return False
-    _log(f"auto-start: docker compose up -d  ({compose.parent.name})")
-    r = subprocess.run(
-        ["docker", "compose", "-f", str(compose), "up", "-d", "--wait"],
-        cwd=task_dir,
-        check=False,
-    )
-    if r.returncode != 0:
-        _log(f"auto-start: docker compose up failed (rc={r.returncode})")
-        return False
-    _log("auto-start: target container started")
-    return True
-
-
-def _stop_target(task_dir: Path) -> None:
-    compose = _compose_file(task_dir)
-    if compose is None:
-        return
-    _log(f"auto-stop: docker compose down  ({compose.parent.name})")
-    subprocess.run(
-        ["docker", "compose", "-f", str(compose), "down"],
-        cwd=task_dir,
-        check=False,
-    )
-    _log("auto-stop: target container stopped")
-
-
-# ---------------------------------------------------------------------------
-# Whitebox mode: delegate to existing bountybench infrastructure
+# Whitebox mode: source code + running container
 # ---------------------------------------------------------------------------
 
 def _build_and_run_whitebox(
-    task: Any,
     run_dir: Path,
     *,
-    strix: Path,
-    specialist_pack: Path,
-    max_turns: int,
+    codebase_dir: Path,
+    target_url: str,
+    instructions_file: Path,
     engagement_dir: Path,
+    specialist_pack: Path,
+    strix: Path,
+    max_turns: int,
     audit_mode: bool,
     common_kwargs: dict[str, Any],
 ) -> dict[str, Any]:
+    """Stage workspace, run strix with source+target, and collect artifacts for one whitebox run."""
     if run_dir.exists():
         kind = "audit" if audit_mode else "explore"
-        raise BountyBenchError(
+        raise EngageError(
             f"{kind} dir already exists: {run_dir} — delete it or resume from a later round"
         )
-    plan = build_plan(
-        task,
-        strix=strix,
-        output_dir=run_dir,
-        max_turns=max_turns,
-        specialist_pack=specialist_pack,
-        engagement_dir=engagement_dir,
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    staged_engagement = run_dir / "workspace" / "engagement"
+    artifacts_dir = run_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    stage_engagement(
+        engagement_dir,
+        staged_engagement,
         audit_mode=audit_mode,
-        **common_kwargs,
+        specialist_pack=specialist_pack,
     )
-    write_plan(plan)
-    return execute_plan(plan)
+
+    staged_instructions = run_dir / "instructions.md"
+    shutil.copy2(instructions_file, staged_instructions)
+    shutil.copy2(instructions_file, staged_engagement / "instructions.md")
+
+    if audit_mode:
+        profile_file = run_dir / "audit-verify-profile.md"
+        profile_sources = [specialist_pack / "profiles" / "audit-verify.md"]
+    else:
+        profile_file = run_dir / "engagement-explorer-profile.md"
+        profile_sources = [specialist_pack / "profiles" / "engagement-explore.md"]
+    write_audit_profile(profile_file, profile_sources)
+
+    # strix argv: URL + codebase (mounted in sandbox) + staged engagement workspace
+    argv: list[str] = [
+        str(strix),
+        "-n",
+        "--target", target_url,
+        "--target", str(codebase_dir),
+        "--target", str(staged_engagement),
+        "--instruction-file", str(staged_instructions),
+        "--scan-mode", common_kwargs.get("scan_mode") or "standard",
+        "--max-turns", str(max_turns),
+    ]
+
+    strix_env: dict[str, str] = {
+        "STRIX_TELEMETRY": "0",
+        "SCARF_NO_ANALYTICS": "true",
+        "DO_NOT_TRACK": "1",
+        "OPENAI_AGENTS_DISABLE_TRACING": "1",
+        "OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA": "0",
+        "STRIX_COMPACT_ROOT_PROMPT_FILE": str(profile_file),
+    }
+    if v := common_kwargs.get("sandbox_network"):
+        strix_env["STRIX_DOCKER_SANDBOX_NETWORK"] = v
+        if target_hostname := urlparse(target_url).hostname:
+            strix_env["STRIX_SANDBOX_NO_PROXY_EXTRA"] = target_hostname
+    if v := common_kwargs.get("sandbox_image"):
+        strix_env["STRIX_IMAGE"] = v
+    if v := common_kwargs.get("llm"):
+        strix_env["STRIX_LLM"] = v
+    if v := common_kwargs.get("llm_api_base"):
+        strix_env["LLM_API_BASE"] = v
+    if v := common_kwargs.get("llm_api_key"):
+        strix_env["LLM_API_KEY"] = v
+    if v := common_kwargs.get("context_window"):
+        strix_env["STRIX_CONTEXT_WINDOW_TOKENS"] = str(v)
+    if v := common_kwargs.get("wrap_up_at_pressure"):
+        strix_env["STRIX_CONTEXT_WRAP_UP_PRESSURE"] = str(v)
+    if common_kwargs.get("disable_streaming"):
+        strix_env["LLM_DISABLE_STREAMING"] = "1"
+    if inject_headers := common_kwargs.get("inject_headers"):
+        strix_env["STRIX_INJECT_HEADERS"] = ",".join(inject_headers)
+    if block_hosts := common_kwargs.get("block_hosts"):
+        strix_env["STRIX_BLOCK_HOSTS"] = ",".join(block_hosts)
+    nuclei = Path.home() / "nuclei-templates"
+    if nuclei.is_dir():
+        strix_env["STRIX_NUCLEI_TEMPLATES_HOST_PATH"] = str(nuclei)
+    if v := os.environ.get("TAVILY_API_KEY"):
+        strix_env["TAVILY_API_KEY"] = v
+    if v := os.environ.get("SEARXNG_URL"):
+        strix_env["SEARXNG_URL"] = v
+
+    plan: dict[str, Any] = {
+        "adapter": "whitebox-engage",
+        "mode": "whitebox",
+        "audit_mode": audit_mode,
+        "codebase_dir": str(codebase_dir),
+        "target_url": target_url,
+        "engagement_dir": str(engagement_dir),
+        "staged_engagement_dir": str(staged_engagement),
+        "instruction_file": str(staged_instructions),
+        "manifest_file": str(run_dir / "manifest.json"),
+        "artifacts_dir": str(artifacts_dir),
+        "strix": str(strix),
+        "strix_argv": argv,
+        "strix_env": strix_env,
+        "strix_run_dir_hint": str(run_dir / "strix_runs"),
+        "max_turns": max_turns,
+        "specialist_pack": str(specialist_pack),
+        "status": "planned",
+        "created_at": now_iso(),
+    }
+    (run_dir / "manifest.json").write_text(
+        json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    env = os.environ.copy()
+    env.update(strix_env)
+    stdout_log = run_dir / "strix.stdout.log"
+    stderr_log = run_dir / "strix.stderr.log"
+    started = now_iso()
+    with open(stdout_log, "w", encoding="utf-8") as out_f, \
+         open(stderr_log, "w", encoding="utf-8") as err_f:
+        result = subprocess.run(argv, cwd=run_dir, env=env, stdout=out_f, stderr=err_f, check=False)
+    completed = now_iso()
+
+    strix_runs_dir = run_dir / "strix_runs"
+    if strix_runs_dir.is_dir():
+        subprocess.run(["sudo", "chmod", "-R", "a+rX", str(strix_runs_dir)], check=False)
+
+    stdout_text = stdout_log.read_text(encoding="utf-8", errors="replace")
+    soft_exit = result.returncode in {0, 2} or (
+        result.returncode == 1 and "Max turns" in stdout_text
+    )
+    plan.update({
+        "status": "completed" if soft_exit else "failed",
+        "strix_returncode": result.returncode,
+        "started_at": started,
+        "completed_at": completed,
+    })
+    collect_engagement_artifacts(plan)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return plan
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +275,7 @@ def _build_and_run_target(
     """Stage workspace, run strix, and collect artifacts for one target run."""
     if run_dir.exists():
         kind = "audit" if audit_mode else "explore"
-        raise BountyBenchError(
+        raise EngageError(
             f"{kind} dir already exists: {run_dir} — delete it or resume from a later round"
         )
 
@@ -372,25 +451,34 @@ def run_chain(args: argparse.Namespace) -> int:
     }
 
     # Mode-specific setup and validation
-    auto_start = getattr(args, "auto_start_target", False)
     if mode == "whitebox":
-        try:
-            task = load_task(args.bountybench, args.project, args.bounty, "detect")
-        except BountyBenchError as exc:
-            print(f"engage: failed to load task: {exc}", file=sys.stderr)
+        codebase_dir = args.codebase.expanduser().resolve()
+        if not codebase_dir.is_dir():
+            print(f"engage: codebase directory not found: {codebase_dir}", file=sys.stderr)
             return 2
-
-        if auto_start:
-            if not _start_target(task.task_dir):
-                print("engage: --auto-start-target: failed to start target container", file=sys.stderr)
-                return 2
+        instructions_file = args.instructions.expanduser().resolve()
+        if not instructions_file.is_file():
+            print(
+                f"engage: instructions file not found: {instructions_file}\n"
+                f"  Copy specialists/bug-bounty/templates/instructions.md to that path "
+                f"and fill it in before running.",
+                file=sys.stderr,
+            )
+            return 2
+        target_url = args.target
 
         def run_one(run_dir: Path, *, audit_mode: bool, max_turns: int) -> dict[str, Any]:
             return _build_and_run_whitebox(
-                task, run_dir,
-                strix=strix, specialist_pack=specialist_pack,
-                max_turns=max_turns, engagement_dir=engagement_dir,
-                audit_mode=audit_mode, common_kwargs=common_kwargs,
+                run_dir,
+                codebase_dir=codebase_dir,
+                target_url=target_url,
+                instructions_file=instructions_file,
+                engagement_dir=engagement_dir,
+                specialist_pack=specialist_pack,
+                strix=strix,
+                max_turns=max_turns,
+                audit_mode=audit_mode,
+                common_kwargs=common_kwargs,
             )
 
     elif mode == "target":
@@ -429,11 +517,9 @@ def run_chain(args: argparse.Namespace) -> int:
         f"explore_turns={explore_turns}  audit_turns={audit_turns}"
     )
 
-    auto_start_task_dir = task.task_dir if (auto_start and mode == "whitebox") else None
     dry_run_streak = 0
 
-    try:
-      for round_num in range(1, max_rounds + 1):
+    for round_num in range(1, max_rounds + 1):
         run_n = _next_run_number(engagement_dir)
         run_label = f"run-{run_n:03d}"
         _log(f"=== Round {round_num}/{max_rounds} ({run_label}) ===")
@@ -494,16 +580,13 @@ def run_chain(args: argparse.Namespace) -> int:
 
         _log(f"audit {run_label} done")
 
-      msg = (
-          f"chain complete — {max_rounds} round(s) finished  "
-          f"engagement: {engagement_dir.name}"
-      )
-      _log(msg)
-      _notify("Engage — chain complete", msg, notify)
-      return 0
-    finally:
-      if auto_start_task_dir:
-          _stop_target(auto_start_task_dir)
+    msg = (
+        f"chain complete — {max_rounds} round(s) finished  "
+        f"engagement: {engagement_dir.name}"
+    )
+    _log(msg)
+    _notify("Engage — chain complete", msg, notify)
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -720,7 +803,7 @@ def run_smoke(args: argparse.Namespace) -> int:
 def _load_specialists_json(specialist_pack: Path) -> dict[str, Any]:
     path = specialist_pack / "specialists.json"
     if not path.is_file():
-        raise BountyBenchError(
+        raise EngageError(
             f"specialists.json not found in specialist pack: {specialist_pack}\n"
             f"  Create {path} — see docs/runbooks/engage-pipeline-plan.md Phase 5."
         )
@@ -841,7 +924,7 @@ def _coordinator_call(
 ) -> str:
     model = getattr(args, "coordinator_llm", None) or args.llm
     if not model:
-        raise BountyBenchError(
+        raise EngageError(
             "coordinator needs a model: set --llm or --coordinator-llm"
         )
     api_key = args.llm_api_key or os.environ.get("LLM_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
@@ -855,16 +938,16 @@ def _coordinator_call(
             raw = _llm_openai_compat(model, prompt, api_base, api_key or "placeholder")
         elif model.startswith("claude-"):
             if not api_key:
-                raise BountyBenchError(
+                raise EngageError(
                     "coordinator: set LLM_API_KEY or ANTHROPIC_API_KEY for direct Anthropic calls, "
                     "or set --llm-api-base to route through a proxy"
                 )
             raw = _llm_anthropic(model, prompt, api_key)
         else:
-            raise BountyBenchError(
+            raise EngageError(
                 f"coordinator: set --llm-api-base for non-Claude model {model!r}"
             )
-    except BountyBenchError:
+    except EngageError:
         raise
     except Exception as exc:
         _log(f"coordinator LLM call failed: {exc} — treating as 'done'")
@@ -892,7 +975,7 @@ def run_orchestrate(args: argparse.Namespace) -> int:
 
     try:
         manifest = _load_specialists_json(specialist_pack)
-    except BountyBenchError as exc:
+    except EngageError as exc:
         print(f"engage: {exc}", file=sys.stderr)
         return 2
 
@@ -933,7 +1016,7 @@ def run_orchestrate(args: argparse.Namespace) -> int:
                 master_report = master_path.read_text(encoding="utf-8") if master_path.is_file() else "(no findings yet)"
                 try:
                     next_sp = _coordinator_call(master_report, manifest, available, state["exhausted"], args)
-                except BountyBenchError as exc:
+                except EngageError as exc:
                     _log(f"coordinator error: {exc} — aborting")
                     _notify("Engage — orchestration aborted", str(exc), notify)
                     return 1
@@ -985,7 +1068,7 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
         "--mode",
         choices=["whitebox", "target"],
         default="whitebox",
-        help="whitebox: white-box target with source (BountyBench); target: black-box live URL (H1, CTF, lab)",
+        help="whitebox: source code + running container; target: black-box live URL (H1, CTF, lab)",
     )
 
     # Chain config
@@ -1032,46 +1115,26 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
         help="suppress desktop notifications on completion / abort",
     )
 
-    # Target mode args
-    tgt = p.add_argument_group("Target mode (--mode target)")
-    tgt.add_argument(
+    # Shared target args (both modes)
+    p.add_argument(
         "--target",
         metavar="URL",
-        help="target URL (e.g. https://app.example.com)",
+        help="target URL — running app to test (required for both modes, e.g. http://localhost:3000 or https://app.example.com)",
     )
-    tgt.add_argument(
+    p.add_argument(
         "--instructions",
         type=Path,
         metavar="FILE",
-        help="path to the per-target instructions.md (required for target mode)",
+        help="path to the per-engagement instructions.md (required for both modes)",
     )
 
-    # Whitebox mode args
-    bb = p.add_argument_group("Whitebox mode (--mode whitebox)")
-    bb.add_argument(
-        "--auto-start-target",
-        action="store_true",
-        dest="auto_start_target",
-        help="start the BountyBench target container before running and stop it after (docker compose up/down)",
-    )
-    bb.add_argument(
-        "--bountybench",
+    # Whitebox-only args
+    wb = p.add_argument_group("Whitebox mode (--mode whitebox)")
+    wb.add_argument(
+        "--codebase",
         type=Path,
-        default=_BOUNTYBENCH_DEFAULT,
         metavar="DIR",
-        help=f"BountyBench root directory (default: {_BOUNTYBENCH_DEFAULT})",
-    )
-    bb.add_argument(
-        "--project",
-        metavar="NAME",
-        help="BountyBench project name (required for benchmark mode)",
-    )
-    bb.add_argument(
-        "--bounty",
-        type=int,
-        default=0,
-        metavar="N",
-        help="BountyBench bounty index (default: 0)",
+        help="path to the target's source code directory (required for whitebox mode)",
     )
 
     # Strix + model
@@ -1263,17 +1326,23 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  # Single specialist chain (BountyBench):
-  engage run --project lunary \\
-      --engagement ~/wowbagger-runs/engagements/lunary/chain-002 \\
+  # Whitebox (source code + running container):
+  engage run --mode whitebox \\
+      --codebase ~/src/myapp \\
+      --target http://localhost:3000 \\
+      --instructions ~/engagements/myapp/instructions.md \\
+      --engagement ~/wowbagger-runs/engagements/myapp/chain-001 \\
       --rounds 5 --stop-on-dry-runs 2
 
-  # Full multi-specialist orchestration (BountyBench):
-  engage orchestrate --project agentscope \\
-      --engagement ~/wowbagger-runs/engagements/agentscope/chain-001 \\
+  # Multi-specialist orchestration:
+  engage orchestrate --mode whitebox \\
+      --codebase ~/src/myapp \\
+      --target http://localhost:3000 \\
+      --instructions ~/engagements/myapp/instructions.md \\
+      --engagement ~/wowbagger-runs/engagements/myapp/chain-001 \\
       --rounds-per-specialist 5 --llm anthropic/claude-sonnet-5-5
 
-  # Live target (H1, CTF, lab):
+  # Black-box target (H1, CTF, lab):
   engage run --mode target --target https://app.example.com \\
       --instructions ~/programs/example/instructions.md \\
       --engagement ~/wowbagger-runs/engagements/example/chain-001
@@ -1312,35 +1381,35 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "run":
-        if args.mode == "whitebox" and not args.project:
-            parser.error("--project is required for --mode whitebox")
-        if args.mode == "target" and not args.target:
-            parser.error("--target is required for --mode target")
-        if args.mode == "target" and not args.instructions:
-            parser.error("--instructions is required for --mode target")
+        if args.mode == "whitebox" and not args.codebase:
+            parser.error("--codebase is required for --mode whitebox")
+        if not args.target:
+            parser.error("--target is required")
+        if not args.instructions:
+            parser.error("--instructions is required")
         try:
             return run_chain(args)
-        except BountyBenchError as exc:
+        except EngageError as exc:
             print(f"engage: {exc}", file=sys.stderr)
             return 2
 
     if args.command == "orchestrate":
-        if args.mode == "whitebox" and not args.project:
-            parser.error("--project is required for --mode whitebox")
-        if args.mode == "target" and not args.target:
-            parser.error("--target is required for --mode target")
-        if args.mode == "target" and not args.instructions:
-            parser.error("--instructions is required for --mode target")
+        if args.mode == "whitebox" and not args.codebase:
+            parser.error("--codebase is required for --mode whitebox")
+        if not args.target:
+            parser.error("--target is required")
+        if not args.instructions:
+            parser.error("--instructions is required")
         try:
             return run_orchestrate(args)
-        except BountyBenchError as exc:
+        except EngageError as exc:
             print(f"engage: {exc}", file=sys.stderr)
             return 2
 
     if args.command == "smoke":
         try:
             return run_smoke(args)
-        except BountyBenchError as exc:
+        except EngageError as exc:
             print(f"engage: {exc}", file=sys.stderr)
             return 2
 
