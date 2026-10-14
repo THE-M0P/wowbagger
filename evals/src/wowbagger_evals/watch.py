@@ -234,12 +234,20 @@ def _pressure_style(pct: float) -> str:
 
 
 def _clean_tool_output(out: str) -> str:
-    m = re.search(r'Output: (.+)', out)
-    if m:
-        out = m.group(1)
+    # Strip strix exec_command header block
+    out = re.sub(
+        r'^Chunk ID: \S+\nWall time: [^\n]+\nProcess [^\n]+\nOutput:\n?',
+        '', out,
+    )
+    # Strip lines that are only = or - characters (pure visual separators)
+    out = re.sub(r'(?m)^[ \t]*[=\-]{4,}[ \t]*$', '', out)
+    # Strip ANSI escape codes
     out = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', out)
-    out = re.sub(r'[^\x20-\x7e]', ' ', out)
-    return out.replace('\t', ' ').strip()
+    # Strip non-printable except newlines and tabs
+    out = re.sub(r'[^\x09\x0a\x20-\x7e]', ' ', out)
+    # Collapse runs of blank lines to single blank
+    out = re.sub(r'\n{3,}', '\n\n', out)
+    return out.strip()
 
 
 def _fmt_duration(ms: int | None) -> str:
@@ -257,15 +265,26 @@ def _clean_exec_input(inp: str) -> str:
     return cleaned if cleaned else inp
 
 
-def _append_output(text: Text, out: str, avail: int) -> None:
-    """Append tool output, coloring PASS bold-green and FAIL bold-red."""
-    for part in re.split(r'\b(PASS|FAIL)\b', _truncate(out, avail)):
-        if part == "PASS":
-            text.append("PASS", style="bold green")
-        elif part == "FAIL":
-            text.append("FAIL", style="bold red")
-        else:
-            text.append(part, style="dim")
+def _append_output(text: Text, out: str, max_lines: int = 8) -> None:
+    """Append tool output multi-line, coloring PASS bold-green and FAIL bold-red."""
+    lines = [l for l in out.splitlines() if l.strip()]
+    shown = lines[:max_lines]
+    for line in shown:
+        text.append("  ")
+        for part in re.split(r'\b(PASS|FAIL|ERROR|WARN)\b', line):
+            if part == "PASS":
+                text.append("PASS", style="bold green")
+            elif part == "FAIL":
+                text.append("FAIL", style="bold red")
+            elif part in ("ERROR", "WARN"):
+                text.append(part, style="bold yellow")
+            elif re.match(r'^={2,}', part.strip()):
+                text.append(part, style="dim italic")
+            else:
+                text.append(part, style="dim")
+        text.append("\n")
+    if len(lines) > max_lines:
+        text.append(f"  … +{len(lines) - max_lines} more lines\n", style="dim")
 
 
 def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: int = 120) -> Panel:
@@ -371,11 +390,9 @@ def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: in
         mid_section.append(str(lead), style="bold white")
 
     # --- Activity feed ---
-    # 3 lines per entry: header + output + blank separator
+    # ~8 lines per entry (header + up to 8 output lines + blank)
     reserved = 10 + (len(exhausted) + (1 if current else 0) if chain_state else 0)
-    max_tc = max(2, (term_height - reserved) // 3)
-    # usable width: panel borders (2) + Rich padding (4) + left gutter (~6)
-    avail = max(40, term_width - 12)
+    max_tc = max(2, (term_height - reserved) // 8)
 
     activity = Text(justify="left")
     if thinking:
@@ -385,37 +402,58 @@ def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: in
     for tc in shown:
         t_num  = tc.get("turn", "?")
         tool   = tc.get("tool", "?")
-        inp    = (tc.get("input") or "").replace("\n", " ").strip()
-        out    = (tc.get("output") or "").replace("\n", " ").strip()
+        inp    = (tc.get("input") or "").strip()
+        out    = (tc.get("output") or "").strip()
         dur_ms = tc.get("duration_ms")
 
         if tool == "exec_command":
             try:
                 parsed = json.loads(inp)
-                inp = parsed.get("cmd", inp).split("\n")[0]
+                inp = parsed.get("cmd", inp)
             except Exception:
                 m = re.search(r'"cmd"\s*:\s*"((?:[^"\\]|\\.)*)', inp)
                 if m:
-                    inp = m.group(1).replace("\\n", " ").replace('\\"', '"')
+                    inp = m.group(1).replace("\\n", "\n").replace('\\"', '"')
             inp = _clean_exec_input(inp)
 
-        if out:
+        if tool == "think":
+            out = ""
+        elif tool in ("create_todo", "update_todo", "complete_todo"):
+            try:
+                data = json.loads(out)
+                todos = data.get("created") or data.get("updated") or []
+                if todos:
+                    first = todos[0].get("title", "")
+                    extra = f" (+{len(todos) - 1} more)" if len(todos) > 1 else ""
+                    out = f"{first}{extra}"
+                else:
+                    out = ""
+            except Exception:
+                pass
+        elif out:
             out = _clean_tool_output(out)
 
         dur_str = _fmt_duration(dur_ms)
 
-        # Header: T11  toolname  1.5s  command...
+        # Header: T11  toolname  1.5s
         activity.append(f"T{t_num:<3} ", style="dim")
         activity.append(tool, style="bold cyan")
         if dur_str:
             activity.append(f"  {dur_str}", style="dim")
-        activity.append(f"  {_truncate(inp, avail)}\n")
+        activity.append("\n")
 
-        # Output line with PASS/FAIL coloring
+        # Command / input (full, let Rich wrap)
+        if inp:
+            first_line = inp.split("\n")[0]
+            rest = inp.split("\n")[1:]
+            activity.append(f"  {first_line}\n")
+            for line in rest[:3]:
+                if line.strip():
+                    activity.append(f"  {line}\n", style="dim")
+
+        # Output with PASS/FAIL/ERROR coloring, multi-line
         if out:
-            activity.append("  → ", style="dim")
-            _append_output(activity, out, avail)
-            activity.append("\n")
+            _append_output(activity, out)
 
         activity.append("\n")  # blank line between entries
 
@@ -463,11 +501,6 @@ def run_watch(args: argparse.Namespace) -> int:
                 state = collect_state(engagement_dir)
                 term_h = console.height
                 live.update(make_renderable(state, term_h, console.width))
-
-                if state.get("status") == "done":
-                    time.sleep(1)
-                    break
-
                 time.sleep(interval)
         except KeyboardInterrupt:
             pass
