@@ -312,7 +312,8 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
 
     # Header
     sp_count = len(exhausted) + (1 if current else 0)
-    header_left = f" {_c('WOWBAGGER', _BOLD, _CYAN)}  {_c(eng_name, _BOLD)}  {current_run}"
+    run_suffix = f"  {current_run}" if current_run and current_run != eng_name else ""
+    header_left = f" {_c('WOWBAGGER', _BOLD, _CYAN)}  {_c(eng_name, _BOLD)}{run_suffix}"
     header_right = f" {_c(_fmt_elapsed(elapsed), _BOLD)}  "
     header_mid_len = inner - _visible_len(header_left) - _visible_len(header_right)
     lines.append("┌" + "─" * inner + "┐")
@@ -445,7 +446,7 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
 
     # Pad to fill terminal height so the box anchors to the bottom
     used = len(lines) + len(activity_rows) + 1  # +1 for footer
-    for _ in range(max(0, term_h - used - 1)):
+    for _ in range(max(0, term_h - used)):
         row()
 
     lines.append("└" + "─" * inner + "┘")
