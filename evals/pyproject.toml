@@ -7,7 +7,10 @@ name = "wowbagger-evals"
 version = "0.1.0"
 description = "Evaluation adapters for Wowbagger security benchmark runs"
 requires-python = ">=3.12"
-dependencies = ["strix-agent"]
+dependencies = [
+    "rich>=15.0.0",
+    "strix-agent",
+]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

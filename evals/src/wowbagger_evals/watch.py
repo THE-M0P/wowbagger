@@ -3,8 +3,6 @@
 Polls the engagement directory every 2 seconds and redraws a compact
 terminal dashboard showing: specialist progress, coordinator history,
 context pressure, recent tool activity, and live findings.
-
-No external dependencies — uses stdlib ANSI codes only.
 """
 
 from __future__ import annotations
@@ -12,51 +10,22 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from rich.console import Console, Group
+from rich.live import Live
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.table import Table
+from rich.text import Text
+
 
 # ---------------------------------------------------------------------------
-# ANSI helpers
+# Helpers
 # ---------------------------------------------------------------------------
-
-_RESET  = "\x1b[0m"
-_BOLD   = "\x1b[1m"
-_DIM    = "\x1b[2m"
-_GREEN  = "\x1b[32m"
-_YELLOW = "\x1b[33m"
-_RED    = "\x1b[31m"
-_CYAN   = "\x1b[36m"
-_WHITE  = "\x1b[37m"
-_BGREEN = "\x1b[1;32m"
-_BYELLOW= "\x1b[1;33m"
-_BRED   = "\x1b[1;31m"
-_BCYAN  = "\x1b[1;36m"
-
-CLEAR_SCREEN = "\x1b[2J\x1b[H"
-HIDE_CURSOR  = "\x1b[?25l"
-SHOW_CURSOR  = "\x1b[?25h"
-
-
-def _c(text: str, *codes: str) -> str:
-    return "".join(codes) + text + _RESET
-
-
-def _bar(pct: float, width: int = 20) -> str:
-    filled = int(pct * width)
-    bar = "█" * filled + "░" * (width - filled)
-    if pct >= 0.80:
-        color = _BRED
-    elif pct >= 0.60:
-        color = _BYELLOW
-    else:
-        color = _BGREEN
-    return color + bar + _RESET
-
 
 def _fmt_elapsed(seconds: int) -> str:
     h, rem = divmod(seconds, 3600)
@@ -70,16 +39,6 @@ def _truncate(text: str, maxlen: int) -> str:
     if len(text) <= maxlen:
         return text
     return text[: maxlen - 1] + "…"
-
-
-def _visible_len(s: str) -> int:
-    """Approximate visible character length, stripping ANSI escape sequences."""
-    return len(re.sub(r"\x1b\[[0-9;]*m", "", s))
-
-
-def _pad_to(text: str, width: int) -> str:
-    """Pad text to visible width, accounting for ANSI escape codes."""
-    return text + " " * max(0, width - _visible_len(text))
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +62,6 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _find_all_audit_jsonls(engagement_dir: Path) -> list[Path]:
-    """Return all audit.jsonl files under engagement_dir, sorted by mtime."""
     found = []
     try:
         for p in engagement_dir.rglob("audit.jsonl"):
@@ -176,7 +134,6 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
     chain_state = _load_chain_state(engagement_dir)
     state["chain_state"] = chain_state
 
-    # Elapsed from chain-state started_at
     started_at_str = chain_state.get("started_at")
     if started_at_str:
         try:
@@ -185,20 +142,17 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         except ValueError:
             pass
 
-    # Aggregate findings across all sarif files
     sarifs = _find_all_findings_sarifs(engagement_dir)
     state["findings"] = _count_findings(sarifs)
 
-    # Find the most recently active audit.jsonl
     audit_files = _find_all_audit_jsonls(engagement_dir)
     if not audit_files:
         return state
 
     current_audit = audit_files[-1]
     run_dir = current_audit.parent.parent.parent
-    state["current_run"] = str(run_dir.name)  # run-NNN-explore
+    state["current_run"] = str(run_dir.name)
 
-    # Detect active profile name from *-profile.md in run dir (smoke-test, engagement-explorer, …)
     profile_files = list(run_dir.glob("*-profile.md"))
     if profile_files:
         state["active_profile"] = profile_files[0].stem.replace("-profile", "")
@@ -209,16 +163,13 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
     if not events:
         return state
 
-    # Turn count and context pressure from llm events
     llm_starts = [e for e in events if e.get("kind") == "llm_start"]
     llm_ends   = [e for e in events if e.get("kind") == "llm_end"]
     state["turn"] = len(llm_starts)
 
-    # Max turns from scan_start
     scan_start = next((e for e in events if e.get("kind") == "scan_start"), None)
     if scan_start:
         state["max_turns"] = scan_start.get("max_turns")
-        # Fallback elapsed for engage run (no chain-state.json)
         if not started_at_str:
             ts = scan_start.get("ts")
             if ts:
@@ -229,12 +180,10 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
                     pass
 
     if llm_ends:
-        last_end = llm_ends[-1]
-        state["context_pressure"] = last_end.get("input_context_pressure", 0.0)
+        state["context_pressure"] = llm_ends[-1].get("input_context_pressure", 0.0)
 
     state["compactions"] = sum(1 for e in events if e.get("kind") == "context_compaction_skip")
 
-    # Are we currently thinking? (last event is llm_start, no matching llm_end)
     if events:
         last_event = events[-1]
         if last_event.get("kind") == "llm_start":
@@ -243,7 +192,6 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         elif last_event.get("kind") == "scan_end":
             state["status"] = "done"
 
-    # Tool calls with turn numbers — pending must be initialized before the loop
     tool_calls_with_turns: list[dict[str, Any]] = []
     cur_turn = 0
     pending: dict[str, Any] | None = None
@@ -273,192 +221,179 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
 # Rendering
 # ---------------------------------------------------------------------------
 
-def render(state: dict[str, Any], width: int | None = None) -> str:
-    if width is None:
-        width = shutil.get_terminal_size((100, 40)).columns
-    width = max(60, min(width, 160))
-    W = width
-    inner = W - 2
+def _pressure_style(pct: float) -> str:
+    if pct >= 0.80:
+        return "bold red"
+    if pct >= 0.60:
+        return "bold yellow"
+    return "bold green"
 
-    term_h      = shutil.get_terminal_size((100, 40)).lines
-    chain_state = state.get("chain_state", {})
-    exhausted   = chain_state.get("exhausted", [])
-    current     = chain_state.get("current")
-    rounds_by   = chain_state.get("rounds_by_specialist", {})
-    turn        = state.get("turn", 0)
-    max_turns   = state.get("max_turns") or 120
-    ctx_pct     = state.get("context_pressure", 0.0)
-    findings    = state.get("findings", {})
-    elapsed     = state.get("elapsed", 0)
-    thinking    = state.get("thinking", False)
-    compactions = state.get("compactions", 0)
-    recent      = state.get("recent_tools", [])
-    current_run = state.get("current_run") or "—"
+
+def _clean_tool_output(out: str) -> str:
+    m = re.search(r'Output: (.+)', out)
+    if m:
+        out = m.group(1)
+    out = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', out)
+    out = re.sub(r'[^\x20-\x7e]', ' ', out)
+    return out.replace('\t', ' ').strip()
+
+
+def make_renderable(state: dict[str, Any], term_height: int = 40) -> Panel:
+    chain_state    = state.get("chain_state", {})
+    exhausted      = chain_state.get("exhausted", [])
+    current        = chain_state.get("current")
+    rounds_by      = chain_state.get("rounds_by_specialist", {})
+    turn           = state.get("turn", 0)
+    max_turns      = state.get("max_turns") or 120
+    ctx_pct        = float(state.get("context_pressure") or 0.0)
+    findings       = state.get("findings", {})
+    elapsed        = state.get("elapsed", 0)
+    thinking       = state.get("thinking", False)
+    compactions    = state.get("compactions", 0)
+    recent         = state.get("recent_tools", [])
+    current_run    = state.get("current_run") or ""
     active_profile = state.get("active_profile")
-    eng_name    = state["engagement_dir"].name
+    eng_name       = state["engagement_dir"].name
+    is_done        = state.get("status") == "done"
 
-    lines: list[str] = []
+    # --- Panel title ---
+    title = Text()
+    title.append("WOWBAGGER", style="bold cyan")
+    title.append(f"  {eng_name}", style="bold white")
+    if current_run and current_run != eng_name:
+        title.append(f"  {current_run}", style="dim")
 
-    def row(content: str = "", lc: str = "│", rc: str = "│") -> None:
-        visible_len = _visible_len(content)
-        pad = max(0, inner - visible_len)
-        lines.append(lc + content + " " * pad + rc)
-
-    def hline(lc: str = "├", rc: str = "┤", fill: str = "─", label: str = "") -> None:
-        if label:
-            label_part = f" {label} "
-            remaining = inner - len(label_part)
-            left_fill = remaining // 2
-            right_fill = remaining - left_fill
-            lines.append(lc + "─" * left_fill + label_part + "─" * right_fill + rc)
-        else:
-            lines.append(lc + fill * inner + rc)
-
-    # Header
+    # --- Status line ---
+    status = Text(justify="left")
     sp_count = len(exhausted) + (1 if current else 0)
-    run_suffix = f"  {current_run}" if current_run and current_run != eng_name else ""
-    header_left = f" {_c('WOWBAGGER', _BOLD, _CYAN)}  {_c(eng_name, _BOLD)}{run_suffix}"
-    header_right = f" {_c(_fmt_elapsed(elapsed), _BOLD)}  "
-    header_mid_len = inner - _visible_len(header_left) - _visible_len(header_right)
-    lines.append("┌" + "─" * inner + "┐")
-    row(header_left + " " * max(0, header_mid_len) + header_right)
-    hline()
-
-    # Specialist + context bar row
     if chain_state:
-        sp_label = f"Specialist {sp_count}"
+        status.append(f"Specialist {sp_count}", style="dim")
         if current:
-            sp_label = f"Specialist {sp_count}: {_c(current, _BOLD, _CYAN)}"
+            status.append(": ")
+            status.append(current, style="bold cyan")
     else:
-        profile_display = _c(active_profile, _BOLD, _CYAN) if active_profile else ""
-        sp_label = f"Run  {profile_display}" if active_profile else "Run"
-    compact_str = f"  {_c(f'compact×{compactions}', _BYELLOW)}" if compactions else ""
-    turn_part = f"  Turn {_c(str(turn), _BOLD)}/{max_turns}{compact_str}"
-    ctx_bar = _bar(ctx_pct, 16)
-    ctx_pct_str = f"{int(ctx_pct * 100)}%"
-    if ctx_pct >= 0.80:
-        ctx_pct_str = _c(ctx_pct_str, _BRED)
-    elif ctx_pct >= 0.60:
-        ctx_pct_str = _c(ctx_pct_str, _BYELLOW)
-    ctx_part = f"  Context {ctx_bar} {ctx_pct_str}"
-    row(f" {sp_label}{turn_part}{ctx_part}")
-    hline()
+        status.append("Run  ", style="dim")
+        if active_profile:
+            status.append(active_profile, style="bold cyan")
 
-    # Build findings rows — color counts when non-zero
+    if compactions:
+        status.append(f"  compact×{compactions}", style="bold yellow")
+
+    status.append("  Turn ", style="dim")
+    status.append(str(turn), style="bold white")
+    status.append(f"/{max_turns}", style="dim")
+
+    status.append("  Context ", style="dim")
+    bar_style = _pressure_style(ctx_pct)
+    filled = int(ctx_pct * 16)
+    status.append("█" * filled, style=bar_style)
+    status.append("░" * (16 - filled), style="dim")
+    status.append(" ")
+    status.append(f"{int(ctx_pct * 100)}%", style=bar_style)
+
+    # --- Coordinator + findings / single findings ---
     conf = findings.get("confirmed", 0)
     anom = findings.get("anomaly", 0)
     lead = findings.get("lead", 0)
-    conf_str = _c(str(conf), _BRED)    if conf > 0 else _c(str(conf), _BOLD)
-    anom_str = _c(str(anom), _BYELLOW) if anom > 0 else _c(str(anom), _BOLD)
-    lead_str = _c(str(lead), _BOLD)
 
     if chain_state:
-        # Orchestrate: two-column layout (coordinator history + findings)
-        col_w   = (inner - 1) // 2
-        right_w = inner - 1 - col_w
+        mid_table = Table.grid(expand=True, padding=(0, 1))
+        mid_table.add_column(ratio=1)
+        mid_table.add_column(ratio=1)
 
-        def two_col(left: str, right: str) -> None:
-            lines.append("│" + _pad_to(left, col_w) + "│" + _pad_to(right, right_w) + "│")
-
-        def two_col_hline() -> None:
-            lines.append("├" + "─" * col_w + "┼" + "─" * right_w + "┤")
-
-        two_col(_c(" COORDINATOR", _BOLD), _c(" FINDINGS", _BOLD))
-        two_col_hline()
-
-        coord_rows: list[str] = []
+        coord = Text()
+        coord.append("COORDINATOR\n", style="bold white")
         for sp in exhausted:
             r = rounds_by.get(sp, "?")
-            marker = _c("✓", _BGREEN)
-            coord_rows.append(f" {marker} {_pad_to(_truncate(sp, 18), 18)} {r}r")
+            coord.append("✓ ", style="bold green")
+            coord.append(f"{_truncate(sp, 22):<22} {r}r\n")
         if current:
-            marker = _c("→", _BYELLOW)
-            coord_rows.append(f" {marker} {_pad_to(_c(_truncate(current, 18), _BOLD), 18)} {turn}t")
+            coord.append("→ ", style="bold yellow")
+            coord.append(_truncate(current, 22), style="bold white")
+            coord.append(f"  {turn}t\n", style="dim")
 
-        find_rows = [
-            f" {_c('●', _BRED)} Confirmed  {conf_str}",
-            f" {_c('○', _BYELLOW)} Anomalies  {anom_str}",
-            f" {_c('◌', _DIM)} Leads      {lead_str}",
-        ]
-        n_rows = max(len(coord_rows), len(find_rows), 2)
-        for i in range(n_rows):
-            two_col(
-                coord_rows[i] if i < len(coord_rows) else "",
-                find_rows[i]  if i < len(find_rows)  else "",
-            )
+        finds = Text()
+        finds.append("FINDINGS\n", style="bold white")
+        finds.append("● ", style="bold red")
+        finds.append("Confirmed  ")
+        finds.append(str(conf), style="bold red" if conf else "bold white")
+        finds.append("\n")
+        finds.append("○ ", style="bold yellow")
+        finds.append("Anomalies  ")
+        finds.append(str(anom), style="bold yellow" if anom else "bold white")
+        finds.append("\n")
+        finds.append("◌ ", style="dim")
+        finds.append("Leads      ")
+        finds.append(str(lead), style="bold white")
+
+        mid_table.add_row(coord, finds)
+        mid_section: Any = mid_table
     else:
-        # Single run: full-width findings bar
-        n_rows = 1
-        find_line = (
-            f"  {_c('●', _BRED)} Confirmed {conf_str}"
-            f"   {_c('○', _BYELLOW)} Anomalies {anom_str}"
-            f"   {_c('◌', _DIM)} Leads {lead_str}"
-        )
-        row(find_line)
+        mid_section = Text(justify="left")
+        mid_section.append("  ● ", style="bold red")
+        mid_section.append("Confirmed ")
+        mid_section.append(str(conf), style="bold red" if conf else "bold white")
+        mid_section.append("   ○ ", style="bold yellow")
+        mid_section.append("Anomalies ")
+        mid_section.append(str(anom), style="bold yellow" if anom else "bold white")
+        mid_section.append("   ◌ ", style="dim")
+        mid_section.append("Leads ")
+        mid_section.append(str(lead), style="bold white")
 
-    hline(label="ACTIVITY")
+    # --- Activity feed ---
+    # Reserve rows: panel borders (2) + title (1) + status (1) + rule (1) +
+    # mid section (~3 min) + rule (1) + footer (1)
+    reserved = 10 + (len(exhausted) + (1 if current else 0) if chain_state else 0)
+    max_tc = max(2, (term_height - reserved) // 2)
 
-    # How many tool-call pairs fit in the remaining terminal height
-    term_h = shutil.get_terminal_size((100, 40)).lines
-    fixed_rows = 3 + 2 + 2 + n_rows + 2  # header+sep, specialist, col headers+sep, col rows, activity sep+footer
-    available_rows = max(4, term_h - fixed_rows - (1 if thinking else 0))
-    max_tc = max(1, available_rows // 2)  # each tool call takes ~2 lines (cmd + output)
-
-    # Activity feed
-    activity_rows: list[str] = []
+    activity = Text(justify="left")
     if thinking:
-        activity_rows.append(f" {_c('⟳', _BYELLOW)} {_c('Thinking…', _BOLD, _YELLOW)}")
+        activity.append("⟳ Thinking…\n", style="bold yellow")
 
-    for tc in reversed(recent[-max_tc:]):
-        t_num   = tc.get("turn", "?")
-        tool    = tc.get("tool", "?")
-        inp     = (tc.get("input") or "").replace("\n", " ").strip()
-        out     = (tc.get("output") or "").replace("\n", " ").strip()
-        dur_ms  = tc.get("duration_ms")
+    shown = list(reversed(recent[-max_tc:]))
+    for tc in shown:
+        t_num  = tc.get("turn", "?")
+        tool   = tc.get("tool", "?")
+        inp    = (tc.get("input") or "").replace("\n", " ").strip()
+        out    = (tc.get("output") or "").replace("\n", " ").strip()
+        dur_ms = tc.get("duration_ms")
 
-        # Extract command from exec_command input JSON (input_preview may be truncated)
         if tool == "exec_command":
             try:
                 parsed = json.loads(inp)
                 inp = parsed.get("cmd", inp).split("\n")[0]
             except Exception:
-                # Truncated JSON — regex-extract the cmd value directly
                 m = re.search(r'"cmd"\s*:\s*"((?:[^"\\]|\\.)*)', inp)
                 if m:
                     inp = m.group(1).replace("\\n", " ").replace('\\"', '"')
 
-        # Strip strix output metadata: "Chunk ID: X Wall time: X.X seconds Process exited with code X Output: <actual>"
         if out:
-            m = re.search(r'Output: (.+)', out)
-            if m:
-                out = m.group(1)
-            # Strip ANSI codes and non-printable chars from tool output
-            out = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', out)
-            out = re.sub(r'[^\x20-\x7e\t]', ' ', out)
-            out = out.strip()
+            out = _clean_tool_output(out)
 
-        dur_str = f" ({dur_ms}ms)" if dur_ms is not None else ""
-        tool_colored = _c(tool, _CYAN)
-        inp_avail = inner - 2 - 5 - 2 - _visible_len(tool) - 2 - len(dur_str)
-        inp_truncated = _truncate(inp, max(20, inp_avail))
-        activity_rows.append(f" T{t_num:<3} {tool_colored}  {inp_truncated}{_c(dur_str, _DIM)}")
-
+        activity.append(f"T{t_num:<3} ", style="dim")
+        activity.append(tool, style="cyan")
+        activity.append(f"  {_truncate(inp, 80)}")
+        if dur_ms is not None:
+            activity.append(f" ({dur_ms}ms)", style="dim")
+        activity.append("\n")
         if out:
-            out_clean = _truncate(out, inner - 9)
-            activity_rows.append(f"      {_c('→', _DIM)} {_c(out_clean, _DIM)}")
+            activity.append(f"     → {_truncate(out, 100)}\n", style="dim")
 
-    if not activity_rows:
-        activity_rows = [_c(" (waiting for first turn…)", _DIM)]
+    if not shown and not thinking:
+        activity.append("(waiting for first turn…)", style="dim")
 
-    for ar in activity_rows:
-        row(" " + ar if not ar.startswith(" ") else ar)
+    content = Group(
+        status,
+        Rule(style="bright_black"),
+        mid_section,
+        Rule("ACTIVITY", style="bright_black"),
+        activity,
+    )
 
-    # Pad to fill terminal height (activity rows already counted in lines)
-    for _ in range(max(0, term_h - len(lines) - 1)):  # -1 for footer
-        row()
+    border = "bright_green" if is_done else "bright_cyan"
+    subtitle = Text(_fmt_elapsed(elapsed), style="bold white")
 
-    lines.append("└" + "─" * inner + "┘")
-    return "\n".join(lines)
+    return Panel(content, title=title, subtitle=subtitle, border_style=border)
 
 
 # ---------------------------------------------------------------------------
@@ -468,30 +403,33 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
 def run_watch(args: argparse.Namespace) -> int:
     engagement_dir = Path(args.engagement).expanduser().resolve()
     if not engagement_dir.is_dir():
-        print(f"engage watch: directory not found: {engagement_dir}", file=sys.stderr)
+        print(f"engage watch: directory not found: {engagement_dir}")
         return 2
 
     interval = getattr(args, "interval", 2)
+    console = Console()
 
-    sys.stdout.write(HIDE_CURSOR)
-    sys.stdout.flush()
-    try:
-        while True:
-            state = collect_state(engagement_dir)
-            width = shutil.get_terminal_size((100, 40)).columns
-            out = CLEAR_SCREEN + render(state, width) + "\n"
-            sys.stdout.write(out)
-            sys.stdout.flush()
+    state = collect_state(engagement_dir)
+    term_h = console.height
 
-            if state.get("status") == "done":
-                print(_c("\n  Run complete.", _BGREEN))
-                return 0
+    with Live(
+        make_renderable(state, term_h),
+        console=console,
+        screen=True,
+        refresh_per_second=4,
+    ) as live:
+        try:
+            while True:
+                state = collect_state(engagement_dir)
+                term_h = console.height
+                live.update(make_renderable(state, term_h))
 
-            time.sleep(interval)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        sys.stdout.write(SHOW_CURSOR)
-        sys.stdout.flush()
-        print()
+                if state.get("status") == "done":
+                    time.sleep(1)
+                    break
+
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            pass
+
     return 0

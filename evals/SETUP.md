@@ -69,6 +69,7 @@ engage smoke \
   --llm openai/<model-name> \
   --llm-api-base http://<host>:<port>/v1 \
   --llm-api-key local \
+  --context-window <token-count> \
   --disable-streaming \
   --sandbox-image wowbagger-sandbox:local
 ```
@@ -122,7 +123,16 @@ engage orchestrate --mode whitebox \
 engage watch ~/engagements/agentscope/chain-001
 ```
 
-Shows context pressure, coordinator specialist picks, live findings count, and recent tool activity. Updates every 2 seconds. Press Ctrl-C to exit.
+Shows context pressure, coordinator specialist picks, live findings count, and recent tool activity. Updates every 2 seconds, flicker-free. Press Ctrl-C to exit.
+
+### Context pressure and turn limits
+
+Each specialist has two independent stop conditions:
+
+- **`--max-turns N`** (default 120): hard turn ceiling with graduated warnings at 70 %, 85 %, 95 %.
+- **`--wrap-up-at-pressure FRACTION`** (default 0.85): once context usage crosses this threshold, the agent is told to stop exploring and write its report. It sees the live pressure percentage and a 95 % deadline on every remaining turn.
+
+On runs with many tools or verbose output the context fills long before `max-turns` is reached. `--wrap-up-at-pressure` is what ensures the agent still produces a report in those cases. Pass `--context-window` so strix knows the actual window size of your model.
 
 
 ## Environment variables (alternative to config.toml)
