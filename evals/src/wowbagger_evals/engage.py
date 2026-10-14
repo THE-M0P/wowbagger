@@ -1111,6 +1111,7 @@ def _add_smoke_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--llm-api-base", metavar="URL", default=_LLM_API_BASE_DEFAULT, help="LLM API base URL")
     p.add_argument("--llm-api-key", metavar="KEY", default=_LLM_API_KEY_DEFAULT, help="LLM API key")
     p.add_argument("--context-window", type=int, metavar="TOKENS", default=_CONTEXT_WINDOW_DEFAULT)
+    p.add_argument("--wrap-up-at-pressure", dest="wrap_up_at_pressure", type=float, metavar="FRACTION", default=None)
     p.add_argument("--disable-streaming", action="store_true", default=_DISABLE_STREAMING_DEFAULT)
 
 
