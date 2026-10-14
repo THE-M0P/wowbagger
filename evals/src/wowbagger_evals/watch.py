@@ -254,7 +254,7 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
             tool_calls_with_turns.append(pending)
             pending = None
 
-    state["recent_tools"] = tool_calls_with_turns[-4:]
+    state["recent_tools"] = tool_calls_with_turns[-12:]
     return state
 
 
@@ -380,19 +380,25 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
 
     hline(label="ACTIVITY")
 
+    # How many tool-call pairs fit in the remaining terminal height
+    term_h = shutil.get_terminal_size((100, 40)).lines
+    fixed_rows = 3 + 2 + 2 + n_rows + 2  # header+sep, specialist, col headers+sep, col rows, activity sep+footer
+    available_rows = max(4, term_h - fixed_rows - (1 if thinking else 0))
+    max_tc = max(1, available_rows // 2)  # each tool call takes ~2 lines (cmd + output)
+
     # Activity feed
     activity_rows: list[str] = []
     if thinking:
         activity_rows.append(f" {_c('⟳', _BYELLOW)} {_c('Thinking…', _BOLD, _YELLOW)}")
 
-    for tc in reversed(recent[-3:]):
+    for tc in reversed(recent[-max_tc:]):
         t_num   = tc.get("turn", "?")
         tool    = tc.get("tool", "?")
         inp     = (tc.get("input") or "").replace("\n", " ").strip()
         out     = (tc.get("output") or "").replace("\n", " ").strip()
         dur_ms  = tc.get("duration_ms")
 
-        # Try to extract command from exec_command input
+        # Extract command from exec_command input JSON
         if tool == "exec_command":
             try:
                 parsed = json.loads(inp)
@@ -400,14 +406,20 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
             except Exception:
                 pass
 
+        # Strip strix output metadata: "Chunk ID: X Wall time: X.X seconds Process exited with code X Output: <actual>"
+        if out:
+            m = re.search(r'Output: (.+)', out)
+            if m:
+                out = m.group(1)
+
         dur_str = f" ({dur_ms}ms)" if dur_ms is not None else ""
-        avail = inner - 10
         tool_colored = _c(tool, _CYAN)
-        inp_truncated = _truncate(inp, max(20, avail - len(tool) - 10))
+        inp_avail = inner - 2 - 5 - 2 - _visible_len(tool) - 2 - len(dur_str)
+        inp_truncated = _truncate(inp, max(20, inp_avail))
         activity_rows.append(f" T{t_num:<3} {tool_colored}  {inp_truncated}{_c(dur_str, _DIM)}")
 
         if out:
-            out_clean = _truncate(out, inner - 8)
+            out_clean = _truncate(out, inner - 9)
             activity_rows.append(f"      {_c('→', _DIM)} {_c(out_clean, _DIM)}")
 
     if not activity_rows:
