@@ -52,3 +52,14 @@
 # Auto-detected from the installed package location; only set this if that fails.
 # Env var: ENGAGE_EVALS_REPO
 # evals_repo_dir = "~/src/wowbagger-evals"
+
+# Turn limits — ceiling per explore/audit run. stop_on_dry_runs=2 usually exits earlier.
+# Higher values give more coverage on large targets; small targets stop early anyway.
+# Env vars: ENGAGE_EXPLORE_TURNS, ENGAGE_AUDIT_TURNS
+# explore_turns = 150
+# audit_turns   = 80
+
+# Context wrap-up pressure — inject a "write findings now" directive at this fraction.
+# Tune to match your model's context window (e.g. 0.85 for a 110k-token model).
+# Env var: ENGAGE_WRAP_UP_AT_PRESSURE
+# wrap_up_at_pressure = 0.85
