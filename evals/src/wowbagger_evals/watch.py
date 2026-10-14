@@ -327,56 +327,57 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
     row(f" {sp_label}{turn_part}{ctx_part}")
     hline()
 
-    # COORDINATOR column (left half) + FINDINGS column (right half)
-    col_w = (inner - 1) // 2
-    right_w = inner - 1 - col_w
-
-    def two_col(left: str, right: str) -> None:
-        left_padded  = _pad_to(left,  col_w)
-        right_padded = _pad_to(right, right_w)
-        lines.append("│" + left_padded + "│" + right_padded + "│")
-
-    def two_col_hline() -> None:
-        lines.append("├" + "─" * col_w + "┼" + "─" * right_w + "┤")
-
-    # Section headers
-    two_col(
-        _c(" COORDINATOR", _BOLD),
-        _c(" FINDINGS", _BOLD),
-    )
-    two_col_hline()
-
-    # Build coordinator rows — use _pad_to for ANSI-safe column alignment
-    coord_rows: list[str] = []
-    for sp in exhausted:
-        r = rounds_by.get(sp, "?")
-        marker = _c("✓", _BGREEN)
-        name_padded = _pad_to(_truncate(sp, 18), 18)
-        coord_rows.append(f" {marker} {name_padded} {r}r")
-    if current:
-        marker = _c("→", _BYELLOW)
-        name_colored = _c(_truncate(current, 18), _BOLD)
-        name_padded = _pad_to(name_colored, 18)
-        coord_rows.append(f" {marker} {name_padded} {turn}t")
-
     # Build findings rows — color counts when non-zero
     conf = findings.get("confirmed", 0)
     anom = findings.get("anomaly", 0)
     lead = findings.get("lead", 0)
-    conf_str = _c(str(conf), _BRED)   if conf > 0 else _c(str(conf), _BOLD)
+    conf_str = _c(str(conf), _BRED)    if conf > 0 else _c(str(conf), _BOLD)
     anom_str = _c(str(anom), _BYELLOW) if anom > 0 else _c(str(anom), _BOLD)
     lead_str = _c(str(lead), _BOLD)
-    find_rows = [
-        f" {_c('●', _BRED)} Confirmed  {conf_str}",
-        f" {_c('○', _BYELLOW)} Anomalies  {anom_str}",
-        f" {_c('◌', _DIM)} Leads      {lead_str}",
-    ]
 
-    n_rows = max(len(coord_rows), len(find_rows), 2)
-    for i in range(n_rows):
-        l = coord_rows[i] if i < len(coord_rows) else ""
-        r = find_rows[i] if i < len(find_rows) else ""
-        two_col(l, r)
+    if chain_state:
+        # Orchestrate: two-column layout (coordinator history + findings)
+        col_w   = (inner - 1) // 2
+        right_w = inner - 1 - col_w
+
+        def two_col(left: str, right: str) -> None:
+            lines.append("│" + _pad_to(left, col_w) + "│" + _pad_to(right, right_w) + "│")
+
+        def two_col_hline() -> None:
+            lines.append("├" + "─" * col_w + "┼" + "─" * right_w + "┤")
+
+        two_col(_c(" COORDINATOR", _BOLD), _c(" FINDINGS", _BOLD))
+        two_col_hline()
+
+        coord_rows: list[str] = []
+        for sp in exhausted:
+            r = rounds_by.get(sp, "?")
+            marker = _c("✓", _BGREEN)
+            coord_rows.append(f" {marker} {_pad_to(_truncate(sp, 18), 18)} {r}r")
+        if current:
+            marker = _c("→", _BYELLOW)
+            coord_rows.append(f" {marker} {_pad_to(_c(_truncate(current, 18), _BOLD), 18)} {turn}t")
+
+        find_rows = [
+            f" {_c('●', _BRED)} Confirmed  {conf_str}",
+            f" {_c('○', _BYELLOW)} Anomalies  {anom_str}",
+            f" {_c('◌', _DIM)} Leads      {lead_str}",
+        ]
+        n_rows = max(len(coord_rows), len(find_rows), 2)
+        for i in range(n_rows):
+            two_col(
+                coord_rows[i] if i < len(coord_rows) else "",
+                find_rows[i]  if i < len(find_rows)  else "",
+            )
+    else:
+        # Single run: full-width findings bar
+        n_rows = 1
+        find_line = (
+            f"  {_c('●', _BRED)} Confirmed {conf_str}"
+            f"   {_c('○', _BYELLOW)} Anomalies {anom_str}"
+            f"   {_c('◌', _DIM)} Leads {lead_str}"
+        )
+        row(find_line)
 
     hline(label="ACTIVITY")
 
@@ -398,13 +399,16 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
         out     = (tc.get("output") or "").replace("\n", " ").strip()
         dur_ms  = tc.get("duration_ms")
 
-        # Extract command from exec_command input JSON
+        # Extract command from exec_command input JSON (input_preview may be truncated)
         if tool == "exec_command":
             try:
                 parsed = json.loads(inp)
                 inp = parsed.get("cmd", inp).split("\n")[0]
             except Exception:
-                pass
+                # Truncated JSON — regex-extract the cmd value directly
+                m = re.search(r'"cmd"\s*:\s*"((?:[^"\\]|\\.)*)', inp)
+                if m:
+                    inp = m.group(1).replace("\\n", " ").replace('\\"', '"')
 
         # Strip strix output metadata: "Chunk ID: X Wall time: X.X seconds Process exited with code X Output: <actual>"
         if out:
