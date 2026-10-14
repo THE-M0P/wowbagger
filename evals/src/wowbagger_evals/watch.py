@@ -397,7 +397,7 @@ def make_renderable(state: dict[str, Any], term_height: int = 40) -> Panel:
     border = "bright_green" if is_done else "bright_cyan"
     subtitle = Text(_fmt_elapsed(elapsed), style="bold white")
 
-    return Panel(content, title=title, subtitle=subtitle, border_style=border)
+    return Panel(content, title=title, subtitle=subtitle, border_style=border, height=term_height)
 
 
 # ---------------------------------------------------------------------------
