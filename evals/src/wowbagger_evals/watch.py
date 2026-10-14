@@ -310,9 +310,12 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
     hline()
 
     # Specialist + context bar row
-    sp_label = f"Specialist {sp_count}"
-    if current:
-        sp_label = f"Specialist {sp_count}: {_c(current, _BOLD, _CYAN)}"
+    if chain_state:
+        sp_label = f"Specialist {sp_count}"
+        if current:
+            sp_label = f"Specialist {sp_count}: {_c(current, _BOLD, _CYAN)}"
+    else:
+        sp_label = "Run"
     turn_part = f"  Turn {_c(str(turn), _BOLD)}/{max_turns}"
     ctx_bar = _bar(ctx_pct, 16)
     ctx_pct_str = f"{int(ctx_pct * 100)}%"
