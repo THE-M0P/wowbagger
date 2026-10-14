@@ -436,7 +436,7 @@ def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: in
         dur_str = _fmt_duration(dur_ms)
 
         # Header: T11  toolname  1.5s
-        activity.append(f"T{t_num:<3} ", style="dim")
+        activity.append(f"T{t_num:<3} ", style="bold yellow")
         activity.append(tool, style="bold cyan")
         if dur_str:
             activity.append(f"  {dur_str}", style="dim")
