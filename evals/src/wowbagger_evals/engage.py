@@ -1386,15 +1386,15 @@ def _add_orchestrate_args(p: argparse.ArgumentParser) -> None:
     """
     _add_run_args(p)
     # Replace --rounds semantics for orchestrate
-    p.set_defaults(rounds=5)  # fallback if rounds_per_specialist not used directly
+    p.set_defaults(rounds=10)  # fallback if rounds_per_specialist not used directly
 
     orch = p.add_argument_group("Orchestrate options")
     orch.add_argument(
         "--rounds-per-specialist",
         type=int,
-        default=5,
+        default=10,
         metavar="N",
-        help="max explore+audit rounds per specialist chain (default: 5)",
+        help="safety ceiling on rounds per specialist — actual termination is driven by --stop-on-dry-runs (default: 10)",
     )
     orch.add_argument(
         "--start-with",
@@ -1447,7 +1447,7 @@ examples:
       --target http://localhost:3000 \\
       --instructions ~/engagements/myapp/instructions.md \\
       --engagement ~/wowbagger-runs/engagements/myapp/chain-001 \\
-      --rounds-per-specialist 5 --llm anthropic/claude-sonnet-5-5
+      --llm anthropic/claude-sonnet-5-5
 
   # Black-box target (H1, CTF, lab):
   engage run --mode target --target https://app.example.com \\
