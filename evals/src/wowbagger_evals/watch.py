@@ -477,6 +477,7 @@ class WatchApp(App):
         self.engagement_dir = engagement_dir
         self.interval = interval
         self._rendered_count = 0
+        self._thinking_shown = False
 
     def compose(self) -> ComposeResult:
         yield StatusPanel()
@@ -494,18 +495,21 @@ class WatchApp(App):
 
         log = self.query_one(RichLog)
         all_tools = state.get("all_tools", [])
-        for tc in all_tools[self._rendered_count:]:
-            log.write(_render_tool_call(tc))
-        self._rendered_count = len(all_tools)
+        new_count = len(all_tools)
+        if new_count > self._rendered_count:
+            for tc in all_tools[self._rendered_count:]:
+                log.write(_render_tool_call(tc))
+            self._rendered_count = new_count
+            self._thinking_shown = False
 
         eng = self.engagement_dir.name
         run = state.get("current_run") or ""
         suffix = f" — {run}" if run and run != eng else ""
         self.title = f"WOWBAGGER  {eng}{suffix}"
 
-        if state.get("thinking") and self._rendered_count > 0:
+        if state.get("thinking") and not self._thinking_shown:
             log.write(Text("⟳ Thinking…\n", style="bold yellow"))
-            self._rendered_count -= 1  # overwrite next tick when tool_end arrives
+            self._thinking_shown = True
 
     def action_follow(self) -> None:
         self.query_one(RichLog).scroll_end(animate=False)
