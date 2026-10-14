@@ -1003,8 +1003,10 @@ def _build_coordinator_prompt(
         f"Available specialists:\n{available_lines}\n\n"
         f"Pick ONE specialist key from the available list that is most likely to find new "
         f"vulnerabilities given the findings above. "
+        f"If there are no findings yet, you MUST pick an exploration or recon specialist — "
+        f"never return 'done' when the engagement has not started. "
         f"Return ONLY the key (e.g. \"auth\") or \"done\" if no specialist is likely to be "
-        f"productive. One word, no explanation, no punctuation."
+        f"productive and findings already exist. One word, no explanation, no punctuation."
     )
 
 
