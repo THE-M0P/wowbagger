@@ -126,7 +126,7 @@ engage orchestrate --mode whitebox \
 
 **Watch a running engagement in a second terminal:**
 ```bash
-engage watch ~/wowbagger-runs/engagements/agentscope/chain-001
+engage watch ~/wowbagger-runs/engagements/myapp/chain-001
 ```
 
 Textual TUI with a status panel (turn, context pressure bar, findings) and a scrollable full-history activity log. Stays open after the run finishes.
