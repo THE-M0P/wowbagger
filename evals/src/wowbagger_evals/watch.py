@@ -242,7 +242,7 @@ def _clean_tool_output(out: str) -> str:
     return out.replace('\t', ' ').strip()
 
 
-def make_renderable(state: dict[str, Any], term_height: int = 40) -> Panel:
+def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: int = 120) -> Panel:
     chain_state    = state.get("chain_state", {})
     exhausted      = chain_state.get("exhausted", [])
     current        = chain_state.get("current")
@@ -374,14 +374,16 @@ def make_renderable(state: dict[str, Any], term_height: int = 40) -> Panel:
         if out:
             out = _clean_tool_output(out)
 
+        # panel borders (2) + padding (4) + "T11  toolname  " prefix (~18)
+        avail = max(40, term_width - 24)
         activity.append(f"T{t_num:<3} ", style="dim")
         activity.append(tool, style="cyan")
-        activity.append(f"  {_truncate(inp, 80)}")
+        activity.append(f"  {_truncate(inp, avail)}")
         if dur_ms is not None:
             activity.append(f" ({dur_ms}ms)", style="dim")
         activity.append("\n")
         if out:
-            activity.append(f"     → {_truncate(out, 100)}\n", style="dim")
+            activity.append(f"     → {_truncate(out, avail)}\n", style="dim")
 
     if not shown and not thinking:
         activity.append("(waiting for first turn…)", style="dim")
@@ -417,7 +419,7 @@ def run_watch(args: argparse.Namespace) -> int:
     term_h = console.height
 
     with Live(
-        make_renderable(state, term_h),
+        make_renderable(state, term_h, console.width),
         console=console,
         screen=True,
         refresh_per_second=4,
@@ -426,7 +428,7 @@ def run_watch(args: argparse.Namespace) -> int:
             while True:
                 state = collect_state(engagement_dir)
                 term_h = console.height
-                live.update(make_renderable(state, term_h))
+                live.update(make_renderable(state, term_h, console.width))
 
                 if state.get("status") == "done":
                     time.sleep(1)
