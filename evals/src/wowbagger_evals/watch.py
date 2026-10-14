@@ -194,7 +194,15 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         return state
 
     current_audit = audit_files[-1]
-    state["current_run"] = str(current_audit.parent.parent.parent.name)  # run-NNN-explore
+    run_dir = current_audit.parent.parent.parent
+    state["current_run"] = str(run_dir.name)  # run-NNN-explore
+
+    # Detect active profile name from *-profile.md in run dir (smoke-test, engagement-explorer, …)
+    profile_files = list(run_dir.glob("*-profile.md"))
+    if profile_files:
+        state["active_profile"] = profile_files[0].stem.replace("-profile", "")
+    else:
+        state["active_profile"] = None
 
     events = _read_jsonl(current_audit)
     if not events:
@@ -254,7 +262,7 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
             tool_calls_with_turns.append(pending)
             pending = None
 
-    state["recent_tools"] = tool_calls_with_turns[-12:]
+    state["recent_tools"] = tool_calls_with_turns[-40:]
     return state
 
 
@@ -269,6 +277,7 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
     W = width
     inner = W - 2
 
+    term_h      = shutil.get_terminal_size((100, 40)).lines
     chain_state = state.get("chain_state", {})
     exhausted   = chain_state.get("exhausted", [])
     current     = chain_state.get("current")
@@ -281,6 +290,7 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
     thinking    = state.get("thinking", False)
     recent      = state.get("recent_tools", [])
     current_run = state.get("current_run") or "—"
+    active_profile = state.get("active_profile")
     eng_name    = state["engagement_dir"].name
 
     lines: list[str] = []
@@ -315,7 +325,8 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
         if current:
             sp_label = f"Specialist {sp_count}: {_c(current, _BOLD, _CYAN)}"
     else:
-        sp_label = "Run"
+        profile_display = _c(active_profile, _BOLD, _CYAN) if active_profile else ""
+        sp_label = f"Run  {profile_display}" if active_profile else "Run"
     turn_part = f"  Turn {_c(str(turn), _BOLD)}/{max_turns}"
     ctx_bar = _bar(ctx_pct, 16)
     ctx_pct_str = f"{int(ctx_pct * 100)}%"
@@ -431,6 +442,11 @@ def render(state: dict[str, Any], width: int | None = None) -> str:
 
     for ar in activity_rows:
         row(" " + ar if not ar.startswith(" ") else ar)
+
+    # Pad to fill terminal height so the box anchors to the bottom
+    used = len(lines) + len(activity_rows) + 1  # +1 for footer
+    for _ in range(max(0, term_h - used - 1)):
+        row()
 
     lines.append("└" + "─" * inner + "┘")
     return "\n".join(lines)
