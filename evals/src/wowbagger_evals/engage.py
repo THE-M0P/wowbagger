@@ -52,6 +52,9 @@ from wowbagger_evals.config import (
     LLM_API_KEY as _LLM_API_KEY_DEFAULT,
     CONTEXT_WINDOW as _CONTEXT_WINDOW_DEFAULT,
     DISABLE_STREAMING as _DISABLE_STREAMING_DEFAULT,
+    EXPLORE_TURNS as _EXPLORE_TURNS_DEFAULT,
+    AUDIT_TURNS as _AUDIT_TURNS_DEFAULT,
+    WRAP_UP_AT_PRESSURE as _WRAP_UP_AT_PRESSURE_DEFAULT,
 )
 
 
@@ -1242,16 +1245,16 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--explore-turns",
         type=int,
-        default=50,
+        default=_EXPLORE_TURNS_DEFAULT,
         metavar="N",
-        help="max LLM turns per explore run (default: 50)",
+        help=f"max LLM turns per explore run (default: {_EXPLORE_TURNS_DEFAULT}, config: explore_turns)",
     )
     p.add_argument(
         "--audit-turns",
         type=int,
-        default=40,
+        default=_AUDIT_TURNS_DEFAULT,
         metavar="N",
-        help="max LLM turns per audit run (default: 40)",
+        help=f"max LLM turns per audit run (default: {_AUDIT_TURNS_DEFAULT}, config: audit_turns)",
     )
     p.add_argument(
         "--stop-on-dry-runs",
@@ -1320,10 +1323,11 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
         dest="wrap_up_at_pressure",
         type=float,
         metavar="FRACTION",
-        default=None,
+        default=_WRAP_UP_AT_PRESSURE_DEFAULT,
         help=(
             "Inject a wrap-up directive when context pressure reaches this fraction "
-            "(e.g. 0.85). Passed to strix as STRIX_CONTEXT_WRAP_UP_PRESSURE."
+            "(e.g. 0.85). Passed to strix as STRIX_CONTEXT_WRAP_UP_PRESSURE. "
+            "Config: wrap_up_at_pressure."
         ),
     )
     p.add_argument(

@@ -102,3 +102,11 @@ DISABLE_STREAMING: bool = (
     os.environ.get("ENGAGE_DISABLE_STREAMING", "").lower() in ("1", "true", "yes")
     or bool(_cfg.get("disable_streaming", False))
 )
+
+# Turn limits and context wrap-up — set once in config rather than repeating on every invocation.
+EXPLORE_TURNS: int = int(os.environ.get("ENGAGE_EXPLORE_TURNS") or _cfg.get("explore_turns") or 50)
+AUDIT_TURNS: int = int(os.environ.get("ENGAGE_AUDIT_TURNS") or _cfg.get("audit_turns") or 40)
+WRAP_UP_AT_PRESSURE: float | None = (
+    (float(os.environ["ENGAGE_WRAP_UP_AT_PRESSURE"]) if "ENGAGE_WRAP_UP_AT_PRESSURE" in os.environ else None)
+    or (float(_cfg["wrap_up_at_pressure"]) if "wrap_up_at_pressure" in _cfg else None)
+)
