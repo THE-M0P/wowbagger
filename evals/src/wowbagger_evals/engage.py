@@ -42,12 +42,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 from wowbagger_evals.watch import run_watch
-from wowbagger_evals.bountybench import (
-    collect_engagement_artifacts,
-    now_iso,
-    stage_engagement,
-    write_audit_profile,
-)
 from wowbagger_evals.config import (
     STRIX_BIN as _STRIX_DEFAULT,
     SPECIALIST_PACK as _DEFAULT_SPECIALIST_PACK,
@@ -64,6 +58,121 @@ from wowbagger_evals.config import (
 
 class EngageError(RuntimeError):
     pass
+
+
+# ---------------------------------------------------------------------------
+# Engagement staging helpers
+# ---------------------------------------------------------------------------
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def stage_engagement(
+    source_dir: Path,
+    staged: Path,
+    *,
+    audit_mode: bool = False,
+    specialist_pack: Path,
+) -> None:
+    source_dir = source_dir.expanduser().resolve()
+    staged.mkdir(parents=True, exist_ok=True)
+    templates = specialist_pack / "templates"
+
+    master = source_dir / "master-report.md"
+    if master.is_file():
+        shutil.copy2(master, staged / "master-report.md")
+    else:
+        t = templates / "master-report.md"
+        if t.is_file():
+            shutil.copy2(t, staged / "master-report.md")
+
+    if audit_mode:
+        additions = source_dir / "run-additions.md"
+        if additions.is_file():
+            shutil.copy2(additions, staged / "run-additions.md")
+    else:
+        t = templates / "run-additions.md"
+        if t.is_file():
+            shutil.copy2(t, staged / "run-additions.md")
+
+    app_model = source_dir / "app-model.md"
+    if app_model.is_file():
+        shutil.copy2(app_model, staged / "app-model.md")
+
+    staged.chmod(staged.stat().st_mode | 0o777)
+    for f in staged.iterdir():
+        if f.is_file():
+            f.chmod(f.stat().st_mode | 0o666)
+
+
+def _patch_turn_count(additions_path: Path, staged: Path) -> None:
+    """Replace the 'Explorer turns used' placeholder with the real LLM turn count."""
+    output_dir = staged.parent.parent
+    jsonl_files = list(output_dir.glob("strix_runs/*/audit.jsonl"))
+    if not jsonl_files:
+        return
+    turn_count = 0
+    try:
+        with open(jsonl_files[0], encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    if json.loads(line).get("kind") == "llm_start":
+                        turn_count += 1
+                except Exception:
+                    pass
+    except Exception:
+        return
+    if turn_count == 0:
+        return
+    text = additions_path.read_text(encoding="utf-8")
+    patched = re.sub(
+        r"(Explorer turns used:\s*).*",
+        rf"\g<1>{turn_count} (adapter-counted)",
+        text,
+        count=1,
+    )
+    if patched != text:
+        additions_path.write_text(patched, encoding="utf-8")
+
+
+def collect_engagement_artifacts(plan: dict[str, Any]) -> None:
+    engagement_dir = Path(str(plan["engagement_dir"]))
+    staged = Path(str(plan["staged_engagement_dir"]))
+    audit_mode = plan.get("audit_mode", False)
+    engagement_dir.mkdir(parents=True, exist_ok=True)
+    if audit_mode:
+        updated_master = staged / "master-report.md"
+        if updated_master.is_file():
+            shutil.copy2(updated_master, engagement_dir / "master-report.md")
+    else:
+        additions = staged / "run-additions.md"
+        if additions.is_file():
+            dest = engagement_dir / "run-additions.md"
+            shutil.copy2(additions, dest)
+            _patch_turn_count(dest, staged)
+        app_model = staged / "app-model.md"
+        if app_model.is_file():
+            shutil.copy2(app_model, engagement_dir / "app-model.md")
+
+
+def write_audit_profile(output_path: Path, sources: list[Path]) -> None:
+    if not sources:
+        raise EngageError("audit profile requested but no source files were configured")
+    parts = ["# DeepThought Audit Verify Profile", ""]
+    for source in sources:
+        if not source.is_file():
+            raise EngageError(f"audit profile source does not exist: {source}")
+        parts.extend([
+            f"## Source: {source.name}",
+            "",
+            source.read_text(encoding="utf-8").strip(),
+            "",
+        ])
+    output_path.write_text("\n".join(parts).rstrip() + "\n", encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
