@@ -1144,7 +1144,7 @@ def run_orchestrate(args: argparse.Namespace) -> int:
             chain_ns = types.SimpleNamespace(**vars(args))
             chain_ns.specialist_pack = temp_pack
             chain_ns.no_notify = True   # outer loop handles notifications
-            chain_ns.rounds = args.rounds_per_specialist
+            chain_ns.rounds = args.rounds_per_specialist or 999
 
             try:
                 rc = run_chain(chain_ns)
@@ -1386,15 +1386,15 @@ def _add_orchestrate_args(p: argparse.ArgumentParser) -> None:
     """
     _add_run_args(p)
     # Replace --rounds semantics for orchestrate
-    p.set_defaults(rounds=10)  # fallback if rounds_per_specialist not used directly
+    p.set_defaults(rounds=999)  # fallback if rounds_per_specialist not used directly
 
     orch = p.add_argument_group("Orchestrate options")
     orch.add_argument(
         "--rounds-per-specialist",
         type=int,
-        default=10,
+        default=None,
         metavar="N",
-        help="safety ceiling on rounds per specialist — actual termination is driven by --stop-on-dry-runs (default: 10)",
+        help="hard cap on rounds per specialist (default: unlimited — actual termination is --stop-on-dry-runs)",
     )
     orch.add_argument(
         "--start-with",
