@@ -1198,11 +1198,12 @@ def _add_smoke_args(p: argparse.ArgumentParser) -> None:
         "--max-smoke-loops",
         dest="max_smoke_loops",
         type=int,
-        default=1,
+        default=5,
         metavar="N",
         help=(
             "run the smoke test up to N times, skipping already-tested tools each loop "
-            "(default: 1 = single run). Results accumulate in smoke-master-report.md."
+            "(default: 5). Stops early once no new tools are tested. "
+            "Results accumulate in smoke-master-report.md."
         ),
     )
 
