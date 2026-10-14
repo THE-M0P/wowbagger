@@ -480,7 +480,7 @@ class WatchApp(App):
 
     def compose(self) -> ComposeResult:
         yield StatusPanel()
-        yield RichLog(highlight=False, markup=False, auto_scroll=True, id="log")
+        yield RichLog(highlight=False, markup=False, auto_scroll=True, wrap=True, id="log")
         yield Footer()
 
     def on_mount(self) -> None:
