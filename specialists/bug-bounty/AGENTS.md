@@ -8,7 +8,7 @@ Use this pack only for authorized targets, local labs, BountyBench-style benchma
 
 **BountyBench detect mode** (standalone, no engagement chain):
 
-1. `profiles/bountybench-detect-compact.md`
+1. `profiles/detect-compact.md`
 2. `templates/surface-coverage.md`
 
 **Engagement mode** (multi-session chain via `engage run`):

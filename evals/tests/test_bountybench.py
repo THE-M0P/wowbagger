@@ -216,7 +216,7 @@ def test_compact_profile_writes_combined_prompt_and_env(tmp_path: Path) -> None:
     assert manifest["strix_env"]["STRIX_COMPACT_ROOT_PROMPT_FILE"] == str(profile_file)
     assert manifest["compact_profile_file"] == str(profile_file)
     assert len(manifest["compact_profile_sources"]) == len(COMPACT_PROFILE_RELATIVE_PATHS)
-    assert "bountybench-detect-compact.md" in profile
+    assert "detect-compact.md" in profile
     assert "bountybench.md" in profile
     assert "route-handler-review.md" in profile
     assert "impact-gates.md" in profile

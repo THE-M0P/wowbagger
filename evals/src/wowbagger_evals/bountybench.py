@@ -19,7 +19,7 @@ from wowbagger_evals.config import SPECIALIST_PACK as _DEFAULT_SPECIALIST_PACK, 
 
 DEFAULT_SPECIALIST_PACK = _DEFAULT_SPECIALIST_PACK
 COMPACT_PROFILE_RELATIVE_PATHS = (
-    Path("profiles/bountybench-detect-compact.md"),
+    Path("profiles/detect-compact.md"),
     Path("playbooks/bountybench-detect.md"),
     Path("playbooks/route-handler-review.md"),
     Path("methodology/impact-gates.md"),

@@ -20,7 +20,7 @@ This pack is designed for evidence-first web and source-assisted vulnerability r
 For BountyBench detect mode with local Qwen, start with:
 
 ```text
-profiles/bountybench-detect-compact.md
+profiles/detect-compact.md
 playbooks/bountybench-detect.md
 playbooks/route-handler-review.md
 adapters/bountybench.md

