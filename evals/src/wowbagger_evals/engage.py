@@ -261,6 +261,8 @@ def _build_and_run_target(
         strix_env["LLM_API_KEY"] = v
     if v := common_kwargs.get("context_window"):
         strix_env["STRIX_CONTEXT_WINDOW_TOKENS"] = str(v)
+    if v := common_kwargs.get("wrap_up_at_pressure"):
+        strix_env["STRIX_CONTEXT_WRAP_UP_PRESSURE"] = str(v)
     if common_kwargs.get("disable_streaming"):
         strix_env["LLM_DISABLE_STREAMING"] = "1"
     if inject_headers := common_kwargs.get("inject_headers"):
@@ -363,6 +365,7 @@ def run_chain(args: argparse.Namespace) -> int:
         "llm_api_base": args.llm_api_base,
         "llm_api_key": args.llm_api_key,
         "context_window": args.context_window,
+        "wrap_up_at_pressure": args.wrap_up_at_pressure,
         "disable_streaming": args.disable_streaming,
         "inject_headers": args.inject_headers,
         "block_hosts": args.block_hosts,
@@ -566,6 +569,8 @@ def run_smoke(args: argparse.Namespace) -> int:
         strix_env["LLM_API_KEY"] = args.llm_api_key
     if args.context_window:
         strix_env["STRIX_CONTEXT_WINDOW_TOKENS"] = str(args.context_window)
+    if args.wrap_up_at_pressure:
+        strix_env["STRIX_CONTEXT_WRAP_UP_PRESSURE"] = str(args.wrap_up_at_pressure)
     if args.disable_streaming:
         strix_env["LLM_DISABLE_STREAMING"] = "1"
 
@@ -1014,6 +1019,17 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
         metavar="TOKENS",
         default=_CONTEXT_WINDOW_DEFAULT,
         help="explicit provider context window token count",
+    )
+    p.add_argument(
+        "--wrap-up-at-pressure",
+        dest="wrap_up_at_pressure",
+        type=float,
+        metavar="FRACTION",
+        default=None,
+        help=(
+            "Inject a wrap-up directive when context pressure reaches this fraction "
+            "(e.g. 0.85). Passed to strix as STRIX_CONTEXT_WRAP_UP_PRESSURE."
+        ),
     )
     p.add_argument(
         "--scan-mode",
