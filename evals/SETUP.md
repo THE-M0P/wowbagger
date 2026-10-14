@@ -78,8 +78,8 @@ engage smoke \
 > A bare `claude-*` name routes to the OpenAI backend and fails with a
 > `cache_control_injection_points` TypeError.
 
-Exits 0 if everything passes. Look for `PASS — all tools verified` in the output.
-Report from the run lands in `~/wowbagger-runs/smoke/smoke-<timestamp>/smoke-report.md`.
+Exits 0 if everything passes. Look for `PASS — smoke complete` in the output.
+The master report lands in `~/wowbagger-runs/smoke/smoke-<timestamp>/smoke-master-report.md`.
 
 Note: smoke auto-selects the `multi-specialist` pack (which contains `smoke-test.md`).
 You can override with `--specialist-pack <path>`.
@@ -151,7 +151,7 @@ On runs with many tools or verbose output the context fills long before `max-tur
 | Problem | Fix |
 |---------|-----|
 | `strix: command not found` | `pip install strix-agent` or set `STRIX_BIN` |
-| `smoke-report.md not found` | Image may have failed to start — check Docker is running and `--sandbox-image` is correct |
-| `FAIL` lines in smoke report | Tool-specific fix; check the report for the failing tool name |
+| `strix report not written` | Image may have failed to start — check Docker is running and `--sandbox-image` is correct |
+| `FAIL` in smoke result | Tool-specific failure; check `smoke-master-report.md` for details |
 | `explore dir already exists` | Delete `run-00N-explore/` from the engagement dir and rerun |
 | LLM connection failed | Check `LLM_API_KEY` is set; for local models check `LLM_API_BASE` points to a running server |

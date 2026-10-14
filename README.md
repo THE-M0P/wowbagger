@@ -128,7 +128,7 @@ The dashboard uses Rich Live for flicker-free updates and automatic terminal res
 ╰────────────────────────────────────────────────────────────────────╯
 ```
 
-The context pressure bar turns **yellow** above 60% and **red** above 80%. Once it crosses the `--wrap-up-at-pressure` threshold (default 85%), the agent receives an urgent directive to write its report before the context window is exhausted.
+The context pressure bar turns **yellow** above 60% and **red** above 80%. Once it crosses the `--wrap-up-at-pressure` threshold (default 0.85), the agent receives an urgent directive to write its report before the context window is exhausted.
 
 ---
 

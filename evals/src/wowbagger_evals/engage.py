@@ -510,32 +510,63 @@ def run_chain(args: argparse.Namespace) -> int:
 # Smoke test — image verification with optional looping
 # ---------------------------------------------------------------------------
 
-def _parse_smoke_report(report_path: Path) -> tuple[set[str], set[str]]:
-    """Return (passed_tools, failed_tools) parsed from a smoke-report.md."""
-    passed: set[str] = set()
-    failed: set[str] = set()
+def _latest_strix_rundir(run_dir: Path) -> Path | None:
+    """Return the most recently modified run subdir inside strix_runs/."""
+    strix_runs = run_dir / "strix_runs"
+    if not strix_runs.is_dir():
+        return None
+    subdirs = [p for p in strix_runs.iterdir() if p.is_dir() and not p.name.startswith(".")]
+    return max(subdirs, key=lambda p: p.stat().st_mtime) if subdirs else None
+
+
+def _smoke_passed(strix_rundir: Path) -> bool | None:
+    """Parse the native penetration_test_report.md for a PASS/FAIL verdict.
+
+    Returns True (pass), False (fail), or None (report absent / verdict unclear).
+    """
+    report = strix_rundir / "penetration_test_report.md"
+    if not report.is_file():
+        return None
+    text = report.read_text(encoding="utf-8", errors="replace")[:3000].lower()
+    if "overall **pass**" in text or "result: pass" in text or ", 0 fail" in text:
+        return True
+    if "overall **fail**" in text or "result: fail" in text:
+        return False
+    import re
+    m = re.search(r'(\d+)\s+fail', text)
+    if m and int(m.group(1)) > 0:
+        return False
+    return None
+
+
+def _context_exhausted(strix_rundir: Path) -> bool:
+    """Return True if this run hit a no_summary_room compaction skip."""
+    audit = strix_rundir / "audit.jsonl"
+    if not audit.is_file():
+        return False
     try:
-        for line in report_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if line.startswith("PASS "):
-                parts = line[5:].split()
-                if parts:
-                    passed.add(parts[0])
-            elif line.startswith("FAIL "):
-                parts = line[5:].split()
-                if parts:
-                    failed.add(parts[0])
+        for line in audit.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                e = json.loads(line)
+                if e.get("kind") == "context_compaction_skip" and e.get("reason") == "no_summary_room":
+                    return True
+            except json.JSONDecodeError:
+                pass
     except OSError:
         pass
-    return passed, failed
+    return False
 
 
 def run_smoke(args: argparse.Namespace) -> int:
     """Launch the smoke-test specialist against the sandbox image.
 
-    Creates a timestamped run dir, runs the smoke-test.md profile, parses the
-    resulting smoke-report.md, and exits 0/1.  With --max-smoke-loops > 1 the
-    run loops, skipping already-tested tools each time, until all tools are
-    covered or the loop limit is hit.  Results accumulate in smoke-master-report.md.
+    Creates a timestamped run dir and runs the smoke-test.md profile. Verdict
+    comes from strix's native penetration_test_report.md — no custom file write
+    required. With --max-smoke-loops > 1, loops when context ran out before the
+    agent could finish; each continuation pass gets the previous report staged
+    into the workspace so the agent knows what was already covered.
     """
     strix = args.strix.expanduser()
     specialist_pack = (args.specialist_pack or _SMOKE_SPECIALIST_PACK).expanduser().resolve()
@@ -597,55 +628,26 @@ def run_smoke(args: argparse.Namespace) -> int:
         "--max-turns", str(args.max_turns),
     ]
 
-    max_loops = getattr(args, "max_smoke_loops", 1)
-    all_passed: set[str] = set()
-    all_failed: set[str] = set()
+    max_loops = getattr(args, "max_smoke_loops", 5)
     master_sections: list[str] = []
+    passed: bool | None = None
     loop_num = 0
 
     for loop_num in range(1, max_loops + 1):
-        all_tested = all_passed | all_failed
-
-        _REPORT_INSTRUCTIONS = (
-            "Write the final PASS/FAIL report to `/workspace/smoke-report.md` using bash "
-            "(exec_command), not the write_file tool — the file must land inside the container's "
-            "/workspace mount so the harness can read it. Format: one `PASS <toolname>` or "
-            "`FAIL <toolname> — <reason>` per line. Example:\n\n"
-            "```bash\n"
-            "cat > /workspace/smoke-report.md << 'REPORT'\n"
-            "PASS nmap\n"
-            "PASS gobuster\n"
-            "FAIL testssl — non-zero exit\n"
-            "REPORT\n"
-            "```\n"
-        )
-
-        # Write per-loop instructions
         if loop_num == 1:
             instruction_file.write_text(
                 "# Smoke Test\n\n"
-                "Execute the full smoke test procedure defined in your root prompt.\n\n"
-                + _REPORT_INSTRUCTIONS,
+                "Execute the full smoke test procedure defined in your root prompt.\n",
                 encoding="utf-8",
             )
         else:
-            already_str = ", ".join(sorted(all_tested))
             instruction_file.write_text(
                 "# Smoke Test (continued)\n\n"
-                "Execute the smoke test procedure defined in your root prompt.\n"
-                "The following tools were already tested in a previous run — **skip them entirely**:\n\n"
-                f"  {already_str}\n\n"
-                "Test only the remaining tools from the procedure.\n\n"
-                + _REPORT_INSTRUCTIONS,
+                "The previous run ran out of context before completing all phases.\n"
+                "The previous run's report is at `/workspace/workspace/prev-smoke-report.md` "
+                "— read it to see what was already covered, then continue from where it left off.\n",
                 encoding="utf-8",
             )
-            # Archive the previous loop's smoke-report so the agent writes a fresh one
-            prev = workspace_dir / "smoke-report.md"
-            if prev.exists():
-                prev.rename(workspace_dir / f"smoke-report-loop-{loop_num - 1:03d}.md")
-            root_mirror = run_dir / "smoke-report.md"
-            if root_mirror.exists():
-                root_mirror.unlink()
 
         _log(
             f"smoke test loop {loop_num}/{max_loops} — "
@@ -665,77 +667,50 @@ def run_smoke(args: argparse.Namespace) -> int:
         if strix_runs_dir.is_dir():
             subprocess.run(["sudo", "chmod", "-R", "a+rX", str(strix_runs_dir)], check=False)
 
-        # Find smoke-report.md; fall back to any markdown with PASS/FAIL lines
-        reports = [p for p in run_dir.rglob("smoke-report.md") if p.name == "smoke-report.md"]
-        if not reports:
-            # Agent may have used write_file (lands in strix_runs) instead of exec_command.
-            # Scan all markdown files for PASS/FAIL line content as a fallback.
-            for md in run_dir.rglob("*.md"):
-                try:
-                    text = md.read_text(encoding="utf-8", errors="replace")
-                    if any(l.startswith("PASS ") or l.startswith("FAIL ") for l in text.splitlines()):
-                        reports.append(md)
-                except OSError:
-                    pass
-
-        if not reports:
-            _log(f"FAIL — smoke-report.md not found (loop {loop_num}, strix may not have completed)")
-            _notify("Engage — smoke FAIL", f"smoke-report.md not written (loop {loop_num})", notify)
+        strix_rundir = _latest_strix_rundir(run_dir)
+        if strix_rundir is None:
+            _log(f"FAIL — strix produced no run dir (loop {loop_num})")
+            _notify("Engage — smoke FAIL", f"strix produced no run dir (loop {loop_num})", notify)
             return 1
 
-        report_path = min(reports, key=lambda p: len(p.parts))
-        report_text = report_path.read_text(encoding="utf-8", errors="replace")
+        native_report = strix_rundir / "penetration_test_report.md"
+        if not native_report.is_file():
+            _log(f"FAIL — penetration_test_report.md not found (loop {loop_num})")
+            _notify("Engage — smoke FAIL", f"strix report not written (loop {loop_num})", notify)
+            return 1
 
-        # Mirror to run_dir root for easy access
-        dest = run_dir / "smoke-report.md"
-        if report_path != dest:
-            shutil.copy2(report_path, dest)
+        report_text = native_report.read_text(encoding="utf-8", errors="replace")
+        passed = _smoke_passed(strix_rundir)
+        exhausted = _context_exhausted(strix_rundir)
 
-        # Parse results and accumulate
-        loop_passed, loop_failed = _parse_smoke_report(report_path)
-        newly_tested = loop_passed | loop_failed
-        all_passed |= loop_passed
-        all_failed |= loop_failed
-
-        master_sections.append(
-            f"\n## Loop {loop_num}  ({len(loop_passed)} PASS, {len(loop_failed)} FAIL)\n\n"
-            + "\n".join(
-                l for l in report_text.splitlines()
-                if l.startswith("PASS ") or l.startswith("FAIL ")
-            )
-        )
-
+        master_sections.append(f"\n## Loop {loop_num}\n\n{report_text}")
         _log(
-            f"loop {loop_num} done — {len(loop_passed)} PASS, {len(loop_failed)} FAIL  "
-            f"cumulative: {len(all_passed)} PASS, {len(all_failed)} FAIL"
+            f"loop {loop_num} — verdict={'PASS' if passed else 'FAIL' if passed is False else 'unclear'}"
+            f"  context_exhausted={exhausted}"
         )
 
-        # Stop early if the agent didn't test anything new (nothing left to test)
-        if not newly_tested:
-            _log(f"loop {loop_num}: no new tools tested — stopping early")
+        if not exhausted or passed is False:
             break
 
-    # Write master report
+        # Context ran out — stage report for next loop and continue
+        _log(f"context exhausted — staging report and continuing to loop {loop_num + 1}/{max_loops}")
+        (workspace_dir / "prev-smoke-report.md").write_text(report_text, encoding="utf-8")
+
     master_path = run_dir / "smoke-master-report.md"
-    master_header = (
-        f"# Smoke Master Report\n\n"
-        f"Run: {run_dir.name}  Loops completed: {loop_num}\n\n"
-        f"**PASS total:** {len(all_passed)}  **FAIL total:** {len(all_failed)}\n"
+    master_path.write_text(
+        f"# Smoke Master Report\n\nRun: {run_dir.name}  Loops: {loop_num}\n"
+        + "".join(master_sections) + "\n",
+        encoding="utf-8",
     )
-    master_path.write_text(master_header + "".join(master_sections) + "\n", encoding="utf-8")
 
-    if all_failed:
-        _log(f"FAIL — {len(all_failed)} failure(s) across {loop_num} loop(s):")
-        for tool in sorted(all_failed)[:10]:
-            _log(f"  FAIL {tool}")
-        if len(all_failed) > 10:
-            _log(f"  ... ({len(all_failed) - 10} more — see {master_path})")
-        _notify("Engage — smoke FAIL", f"{len(all_failed)} failure(s) — {master_path}", notify)
-        return 1
+    if passed:
+        _log(f"PASS — smoke complete  report={master_path}")
+        _notify("Engage — smoke PASS", f"All tools verified — {master_path}", notify)
+        return 0
 
-    _log(f"PASS — all tools verified  report={master_path}")
-    _notify("Engage — smoke PASS", f"All tools verified — {master_path}", notify)
-    return 0
+    _log(f"FAIL — smoke failed  report={master_path}")
+    _notify("Engage — smoke FAIL", f"Failures detected — {master_path}", notify)
+    return 1
 
 
 # ---------------------------------------------------------------------------
