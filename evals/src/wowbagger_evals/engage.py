@@ -507,14 +507,35 @@ def run_chain(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Smoke test — one-shot image verification
+# Smoke test — image verification with optional looping
 # ---------------------------------------------------------------------------
+
+def _parse_smoke_report(report_path: Path) -> tuple[set[str], set[str]]:
+    """Return (passed_tools, failed_tools) parsed from a smoke-report.md."""
+    passed: set[str] = set()
+    failed: set[str] = set()
+    try:
+        for line in report_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("PASS "):
+                parts = line[5:].split()
+                if parts:
+                    passed.add(parts[0])
+            elif line.startswith("FAIL "):
+                parts = line[5:].split()
+                if parts:
+                    failed.add(parts[0])
+    except OSError:
+        pass
+    return passed, failed
+
 
 def run_smoke(args: argparse.Namespace) -> int:
     """Launch the smoke-test specialist against the sandbox image.
 
-    No engagement dir. Creates a timestamped run dir, runs the smoke-test.md
-    profile, parses the resulting smoke-report.md, and exits 0/1.
+    Creates a timestamped run dir, runs the smoke-test.md profile, parses the
+    resulting smoke-report.md, and exits 0/1.  With --max-smoke-loops > 1 the
+    run loops, skipping already-tested tools each time, until all tools are
+    covered or the loop limit is hit.  Results accumulate in smoke-master-report.md.
     """
     strix = args.strix.expanduser()
     specialist_pack = (args.specialist_pack or _SMOKE_SPECIALIST_PACK).expanduser().resolve()
@@ -539,14 +560,6 @@ def run_smoke(args: argparse.Namespace) -> int:
 
     profile_file = run_dir / "smoke-test-profile.md"
     shutil.copy2(smoke_profile, profile_file)
-
-    instruction_file = run_dir / "instructions.md"
-    instruction_file.write_text(
-        "# Smoke Test\n\n"
-        "Execute the full smoke test procedure defined in your root prompt.\n"
-        "Write the final report to `/workspace/smoke-report.md`.\n",
-        encoding="utf-8",
-    )
 
     sandbox_image = args.sandbox_image or _SANDBOX_IMAGE_DEFAULT
     strix_env: dict[str, str] = {
@@ -574,6 +587,7 @@ def run_smoke(args: argparse.Namespace) -> int:
     if args.disable_streaming:
         strix_env["LLM_DISABLE_STREAMING"] = "1"
 
+    instruction_file = run_dir / "instructions.md"
     argv = [
         str(strix),
         "-n",
@@ -583,52 +597,119 @@ def run_smoke(args: argparse.Namespace) -> int:
         "--max-turns", str(args.max_turns),
     ]
 
-    _log(
-        f"smoke test — image={sandbox_image or '(strix default)'}  "
-        f"turns={args.max_turns}  output={run_dir}"
+    max_loops = getattr(args, "max_smoke_loops", 1)
+    all_passed: set[str] = set()
+    all_failed: set[str] = set()
+    master_sections: list[str] = []
+    loop_num = 0
+
+    for loop_num in range(1, max_loops + 1):
+        all_tested = all_passed | all_failed
+
+        # Write per-loop instructions
+        if loop_num == 1:
+            instruction_file.write_text(
+                "# Smoke Test\n\n"
+                "Execute the full smoke test procedure defined in your root prompt.\n"
+                "Write the final report to `/workspace/smoke-report.md`.\n",
+                encoding="utf-8",
+            )
+        else:
+            already_str = ", ".join(sorted(all_tested))
+            instruction_file.write_text(
+                "# Smoke Test (continued)\n\n"
+                "Execute the smoke test procedure defined in your root prompt.\n"
+                "The following tools were already tested in a previous run — **skip them entirely**:\n\n"
+                f"  {already_str}\n\n"
+                "Test only the remaining tools from the procedure. Write the report for this "
+                "run only (do not repeat the already-tested tools) to `/workspace/smoke-report.md`.\n",
+                encoding="utf-8",
+            )
+            # Archive the previous loop's smoke-report so the agent writes a fresh one
+            prev = workspace_dir / "smoke-report.md"
+            if prev.exists():
+                prev.rename(workspace_dir / f"smoke-report-loop-{loop_num - 1:03d}.md")
+            root_mirror = run_dir / "smoke-report.md"
+            if root_mirror.exists():
+                root_mirror.unlink()
+
+        _log(
+            f"smoke test loop {loop_num}/{max_loops} — "
+            f"image={sandbox_image or '(strix default)'}  "
+            f"turns={args.max_turns}  output={run_dir}"
+        )
+
+        stdout_log = run_dir / f"strix-loop-{loop_num:03d}.stdout.log"
+        stderr_log = run_dir / f"strix-loop-{loop_num:03d}.stderr.log"
+        env = os.environ.copy()
+        env.update(strix_env)
+        with open(stdout_log, "w", encoding="utf-8") as out_f, \
+             open(stderr_log, "w", encoding="utf-8") as err_f:
+            subprocess.run(argv, cwd=run_dir, env=env, stdout=out_f, stderr=err_f, check=False)
+
+        strix_runs_dir = run_dir / "strix_runs"
+        if strix_runs_dir.is_dir():
+            subprocess.run(["sudo", "chmod", "-R", "a+rX", str(strix_runs_dir)], check=False)
+
+        # Find and read smoke-report.md written by the agent
+        reports = [p for p in run_dir.rglob("smoke-report.md") if p.name == "smoke-report.md"]
+        if not reports:
+            _log(f"FAIL — smoke-report.md not found (loop {loop_num}, strix may not have completed)")
+            _notify("Engage — smoke FAIL", f"smoke-report.md not written (loop {loop_num})", notify)
+            return 1
+
+        report_path = min(reports, key=lambda p: len(p.parts))
+        report_text = report_path.read_text(encoding="utf-8", errors="replace")
+
+        # Mirror to run_dir root for easy access
+        dest = run_dir / "smoke-report.md"
+        if report_path != dest:
+            shutil.copy2(report_path, dest)
+
+        # Parse results and accumulate
+        loop_passed, loop_failed = _parse_smoke_report(report_path)
+        newly_tested = loop_passed | loop_failed
+        all_passed |= loop_passed
+        all_failed |= loop_failed
+
+        master_sections.append(
+            f"\n## Loop {loop_num}  ({len(loop_passed)} PASS, {len(loop_failed)} FAIL)\n\n"
+            + "\n".join(
+                l for l in report_text.splitlines()
+                if l.startswith("PASS ") or l.startswith("FAIL ")
+            )
+        )
+
+        _log(
+            f"loop {loop_num} done — {len(loop_passed)} PASS, {len(loop_failed)} FAIL  "
+            f"cumulative: {len(all_passed)} PASS, {len(all_failed)} FAIL"
+        )
+
+        # Stop early if the agent didn't test anything new (nothing left to test)
+        if not newly_tested:
+            _log(f"loop {loop_num}: no new tools tested — stopping early")
+            break
+
+    # Write master report
+    master_path = run_dir / "smoke-master-report.md"
+    master_header = (
+        f"# Smoke Master Report\n\n"
+        f"Run: {run_dir.name}  Loops completed: {loop_num}\n\n"
+        f"**PASS total:** {len(all_passed)}  **FAIL total:** {len(all_failed)}\n"
     )
+    master_path.write_text(master_header + "".join(master_sections) + "\n", encoding="utf-8")
 
-    stdout_log = run_dir / "strix.stdout.log"
-    stderr_log = run_dir / "strix.stderr.log"
-    env = os.environ.copy()
-    env.update(strix_env)
-    with open(stdout_log, "w", encoding="utf-8") as out_f, \
-         open(stderr_log, "w", encoding="utf-8") as err_f:
-        subprocess.run(argv, cwd=run_dir, env=env, stdout=out_f, stderr=err_f, check=False)
-
-    strix_runs_dir = run_dir / "strix_runs"
-    if strix_runs_dir.is_dir():
-        subprocess.run(["sudo", "chmod", "-R", "a+rX", str(strix_runs_dir)], check=False)
-
-    # Find smoke-report.md anywhere under run_dir
-    reports = list(run_dir.rglob("smoke-report.md"))
-    if not reports:
-        _log("FAIL — smoke-report.md not found (strix may not have completed)")
-        _notify("Engage — smoke FAIL", "smoke-report.md not written", notify)
+    if all_failed:
+        _log(f"FAIL — {len(all_failed)} failure(s) across {loop_num} loop(s):")
+        for tool in sorted(all_failed)[:10]:
+            _log(f"  FAIL {tool}")
+        if len(all_failed) > 10:
+            _log(f"  ... ({len(all_failed) - 10} more — see {master_path})")
+        _notify("Engage — smoke FAIL", f"{len(all_failed)} failure(s) — {master_path}", notify)
         return 1
 
-    report_path = reports[0]
-    report_text = report_path.read_text(encoding="utf-8", errors="replace")
-
-    # Mirror to run_dir root for easy access
-    dest = run_dir / "smoke-report.md"
-    if report_path != dest:
-        shutil.copy2(report_path, dest)
-
-    fail_lines = [l for l in report_text.splitlines() if l.startswith("FAIL")]
-    overall_fail = "## Result: FAIL" in report_text or bool(fail_lines)
-
-    if overall_fail:
-        _log(f"FAIL — {len(fail_lines)} failure(s):")
-        for line in fail_lines[:10]:
-            _log(f"  {line}")
-        if len(fail_lines) > 10:
-            _log(f"  ... ({len(fail_lines) - 10} more — see {dest})")
-        _notify("Engage — smoke FAIL", f"{len(fail_lines)} failure(s) — {dest}", notify)
-        return 1
-
-    _log(f"PASS — all tools verified  report={dest}")
-    _notify("Engage — smoke PASS", f"All tools verified — {dest}", notify)
+    _log(f"PASS — all tools verified  report={master_path}")
+    _notify("Engage — smoke PASS", f"All tools verified — {master_path}", notify)
     return 0
 
 
@@ -1113,6 +1194,17 @@ def _add_smoke_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--context-window", type=int, metavar="TOKENS", default=_CONTEXT_WINDOW_DEFAULT)
     p.add_argument("--wrap-up-at-pressure", dest="wrap_up_at_pressure", type=float, metavar="FRACTION", default=None)
     p.add_argument("--disable-streaming", action="store_true", default=_DISABLE_STREAMING_DEFAULT)
+    p.add_argument(
+        "--max-smoke-loops",
+        dest="max_smoke_loops",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "run the smoke test up to N times, skipping already-tested tools each loop "
+            "(default: 1 = single run). Results accumulate in smoke-master-report.md."
+        ),
+    )
 
 
 def _add_orchestrate_args(p: argparse.ArgumentParser) -> None:
