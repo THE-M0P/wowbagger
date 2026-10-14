@@ -131,6 +131,30 @@ The context pressure bar turns **yellow** above 60% and **red** above 80% — a 
 
 ---
 
+## Sandbox tools
+
+The agent has full shell access inside the container. Tools by category:
+
+| Category | Tools |
+|----------|-------|
+| **Recon** | `nmap` · `masscan` · `subfinder` · `naabu` · `amass` · `dnsx` · `httpx` · `katana` · `hakrawler` · `gau` · `waybackurls` · `gospider` |
+| **Web scanning** | `ffuf` · `feroxbuster` · `gobuster` · `wfuzz` · `nikto` · `whatweb` · `arjun` · `dirsearch` · `wafw00f` · `wapiti` · `theHarvester` |
+| **Injection** | `sqlmap` · `commix` · `tplmap` · `smuggler` · `dalfox` · `kxss` |
+| **Auth / Crypto** | `jwt_tool` · `testssl.sh` · `padbuster` · `oauth2-pkce` · `totp-bruteforce` · `websocat` |
+| **Static analysis** | `semgrep` · `codeql` · `bandit` · `trufflehog` · `gitleaks` · `trivy` · `retire` · `govulncheck` · `pip-audit` · `ast-grep` · `tree-sitter` |
+| **Binary / RE** | `gdb` · `strace` · `ltrace` · `radare2` · `ghidra-headless` · `pwntools` · `angr` · `checksec` · `binwalk` · `qemu-user-static` |
+| **Cloud / Infra** | `aws` · `kubectl` · `pacu` · `scoutsuite` · `cloud_enum` · `cloud-metadata-probe` · `docker` |
+| **Protocols** | `grpcurl` · `websocat` · `mosquitto-clients` · `redis-tools` · `swaks` · `interactsh-client` |
+| **Brute-force** | `hydra` · `medusa` · `hashcat` |
+| **Browser** | `agent-browser` (headless Chromium, with MITM CA pre-installed) · `caido-cli` |
+| **GraphQL** | `graphw00f` · `clairvoyance` |
+
+Every major tool ships with a `<tool>-parse` JSON wrapper (`nmap-parse`, `ffuf-parse`, `semgrep-parse`, …) that compresses output by 10–20× to keep context usage low. Custom probes: `race-burst`, `llm-probe`, `env-dump`, `container-escape`, `docker-probe`.
+
+SecLists is pre-installed at `/opt/SecLists`.
+
+---
+
 ## Specialist packs
 
 | Pack | Command | Use case | Profiles |
