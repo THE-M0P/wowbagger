@@ -1,8 +1,10 @@
 """engage watch — live terminal viewer for engage orchestrate/run.
 
-Polls the engagement directory every 2 seconds and redraws a compact
-terminal dashboard showing: specialist progress, coordinator history,
-context pressure, recent tool activity, and live findings.
+Polls the engagement directory every 2 seconds and displays a Textual
+dashboard: specialist progress, coordinator history, context pressure,
+live findings, and a scrollable full-history activity log.
+
+Scroll: trackpad / arrow keys / Page Up-Down.  f = follow tail.  q = quit.
 """
 
 from __future__ import annotations
@@ -10,17 +12,17 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from rich.console import Console, Group
-from rich.live import Live
-from rich.panel import Panel
+from rich.console import Group
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.widgets import Footer, RichLog, Static
 
 
 # ---------------------------------------------------------------------------
@@ -123,11 +125,11 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         "context_pressure": 0.0,
         "compactions": 0,
         "thinking": False,
-        "thinking_since": None,
-        "recent_tools": [],
+        "all_tools": [],
         "findings": {"confirmed": 0, "anomaly": 0, "lead": 0},
         "elapsed": 0,
         "current_run": None,
+        "active_profile": None,
         "status": "idle",
     }
 
@@ -156,8 +158,6 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
     profile_files = list(run_dir.glob("*-profile.md"))
     if profile_files:
         state["active_profile"] = profile_files[0].stem.replace("-profile", "")
-    else:
-        state["active_profile"] = None
 
     events = _read_jsonl(current_audit)
     if not events:
@@ -188,15 +188,13 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         and e.get("reason") == "no_summary_room"
     )
 
-    if events:
-        last_event = events[-1]
-        if last_event.get("kind") == "llm_start":
-            state["thinking"] = True
-            state["thinking_since"] = last_event.get("ts")
-        elif last_event.get("kind") == "scan_end":
-            state["status"] = "done"
+    last_event = events[-1]
+    if last_event.get("kind") == "llm_start":
+        state["thinking"] = True
+    elif last_event.get("kind") == "scan_end":
+        state["status"] = "done"
 
-    tool_calls_with_turns: list[dict[str, Any]] = []
+    tool_calls: list[dict[str, Any]] = []
     cur_turn = 0
     pending: dict[str, Any] | None = None
     for e in events:
@@ -214,15 +212,15 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         elif k == "tool_end" and pending is not None:
             pending["output"] = e.get("output_preview", {}).get("text", "")
             pending["duration_ms"] = e.get("duration_ms")
-            tool_calls_with_turns.append(pending)
+            tool_calls.append(pending)
             pending = None
 
-    state["recent_tools"] = tool_calls_with_turns[-40:]
+    state["all_tools"] = tool_calls  # full history, no cap
     return state
 
 
 # ---------------------------------------------------------------------------
-# Rendering
+# Formatting helpers
 # ---------------------------------------------------------------------------
 
 def _pressure_style(pct: float) -> str:
@@ -234,18 +232,13 @@ def _pressure_style(pct: float) -> str:
 
 
 def _clean_tool_output(out: str) -> str:
-    # Strip strix exec_command header block
     out = re.sub(
         r'^Chunk ID: \S+\nWall time: [^\n]+\nProcess [^\n]+\nOutput:\n?',
         '', out,
     )
-    # Strip lines that are only = or - characters (pure visual separators)
     out = re.sub(r'(?m)^[ \t]*[=\-]{4,}[ \t]*$', '', out)
-    # Strip ANSI escape codes
     out = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', out)
-    # Strip non-printable except newlines and tabs
     out = re.sub(r'[^\x09\x0a\x20-\x7e]', ' ', out)
-    # Collapse runs of blank lines to single blank
     out = re.sub(r'\n{3,}', '\n\n', out)
     return out.strip()
 
@@ -257,7 +250,6 @@ def _fmt_duration(ms: int | None) -> str:
 
 
 def _clean_exec_input(inp: str) -> str:
-    """Strip leading bash helper function definitions (ok/fail/check_json etc.)."""
     cleaned = re.sub(
         r'^(?:\s*\w[\w_]*\s*\(\s*\)\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*)+',
         '', inp, flags=re.DOTALL,
@@ -266,10 +258,8 @@ def _clean_exec_input(inp: str) -> str:
 
 
 def _append_output(text: Text, out: str, max_lines: int = 8) -> None:
-    """Append tool output multi-line, coloring PASS bold-green and FAIL bold-red."""
-    lines = [l for l in out.splitlines() if l.strip()]
-    shown = lines[:max_lines]
-    for line in shown:
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    for line in lines[:max_lines]:
         text.append("  ")
         for part in re.split(r'\b(PASS|FAIL|ERROR|WARN)\b', line):
             if part == "PASS":
@@ -287,7 +277,11 @@ def _append_output(text: Text, out: str, max_lines: int = 8) -> None:
         text.append(f"  … +{len(lines) - max_lines} more lines\n", style="dim")
 
 
-def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: int = 120) -> Panel:
+# ---------------------------------------------------------------------------
+# Rich renderables
+# ---------------------------------------------------------------------------
+
+def _render_status(state: dict[str, Any]) -> Any:
     chain_state    = state.get("chain_state", {})
     exhausted      = chain_state.get("exhausted", [])
     current        = chain_state.get("current")
@@ -299,23 +293,12 @@ def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: in
     elapsed        = state.get("elapsed", 0)
     thinking       = state.get("thinking", False)
     compactions    = state.get("compactions", 0)
-    recent         = state.get("recent_tools", [])
-    current_run    = state.get("current_run") or ""
     active_profile = state.get("active_profile")
-    eng_name       = state["engagement_dir"].name
     is_done        = state.get("status") == "done"
 
-    # --- Panel title ---
-    title = Text()
-    title.append("WOWBAGGER", style="bold cyan")
-    title.append(f"  {eng_name}", style="bold white")
-    if current_run and current_run != eng_name:
-        title.append(f"  {current_run}", style="dim")
-
-    # --- Status line ---
-    status = Text(justify="left")
-    sp_count = len(exhausted) + (1 if current else 0)
+    status = Text()
     if chain_state:
+        sp_count = len(exhausted) + (1 if current else 0)
         status.append(f"Specialist {sp_count}", style="dim")
         if current:
             status.append(": ")
@@ -337,18 +320,23 @@ def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: in
     filled = int(ctx_pct * 16)
     status.append("█" * filled, style=bar_style)
     status.append("░" * (16 - filled), style="dim")
-    status.append(" ")
-    status.append(f"{int(ctx_pct * 100)}%", style=bar_style)
+    status.append(f" {int(ctx_pct * 100)}%", style=bar_style)
 
-    # --- Coordinator + findings / single findings ---
+    if is_done:
+        status.append("  ✓ DONE", style="bold bright_green")
+    elif thinking:
+        status.append("  ⟳", style="bold yellow")
+
+    status.append(f"  {_fmt_elapsed(elapsed)}", style="dim")
+
     conf = findings.get("confirmed", 0)
     anom = findings.get("anomaly", 0)
     lead = findings.get("lead", 0)
 
     if chain_state:
-        mid_table = Table.grid(expand=True, padding=(0, 1))
-        mid_table.add_column(ratio=1)
-        mid_table.add_column(ratio=1)
+        grid = Table.grid(expand=True, padding=(0, 1))
+        grid.add_column(ratio=1)
+        grid.add_column(ratio=1)
 
         coord = Text()
         coord.append("COORDINATOR\n", style="bold white")
@@ -366,116 +354,165 @@ def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: in
         finds.append("● ", style="bold red")
         finds.append("Confirmed  ")
         finds.append(str(conf), style="bold red" if conf else "bold white")
-        finds.append("\n")
-        finds.append("○ ", style="bold yellow")
+        finds.append("\n○ ", style="bold yellow")
         finds.append("Anomalies  ")
         finds.append(str(anom), style="bold yellow" if anom else "bold white")
-        finds.append("\n")
-        finds.append("◌ ", style="dim")
+        finds.append("\n◌ ", style="dim")
         finds.append("Leads      ")
         finds.append(str(lead), style="bold white")
 
-        mid_table.add_row(coord, finds)
-        mid_section: Any = mid_table
+        grid.add_row(coord, finds)
+        mid: Any = grid
     else:
-        mid_section = Text(justify="left")
-        mid_section.append("  ● ", style="bold red")
-        mid_section.append("Confirmed ")
-        mid_section.append(str(conf), style="bold red" if conf else "bold white")
-        mid_section.append("   ○ ", style="bold yellow")
-        mid_section.append("Anomalies ")
-        mid_section.append(str(anom), style="bold yellow" if anom else "bold white")
-        mid_section.append("   ◌ ", style="dim")
-        mid_section.append("Leads ")
-        mid_section.append(str(lead), style="bold white")
+        mid = Text()
+        mid.append("  ● ", style="bold red")
+        mid.append("Confirmed ")
+        mid.append(str(conf), style="bold red" if conf else "bold white")
+        mid.append("   ○ ", style="bold yellow")
+        mid.append("Anomalies ")
+        mid.append(str(anom), style="bold yellow" if anom else "bold white")
+        mid.append("   ◌ ", style="dim")
+        mid.append(f"Leads {lead}", style="bold white")
 
-    # --- Activity feed ---
-    # ~8 lines per entry (header + up to 8 output lines + blank)
-    reserved = 10 + (len(exhausted) + (1 if current else 0) if chain_state else 0)
-    max_tc = max(2, (term_height - reserved) // 8)
+    return Group(status, Rule(style="bright_black"), mid)
 
-    activity = Text(justify="left")
-    if thinking:
-        activity.append("⟳ Thinking…\n\n", style="bold yellow")
 
-    shown = list(reversed(recent[-max_tc:]))
-    for tc in shown:
-        t_num  = tc.get("turn", "?")
-        tool   = tc.get("tool", "?")
-        inp    = (tc.get("input") or "").strip()
-        out    = (tc.get("output") or "").strip()
-        dur_ms = tc.get("duration_ms")
+def _render_tool_call(tc: dict[str, Any]) -> Text:
+    t_num  = tc.get("turn", "?")
+    tool   = tc.get("tool", "?")
+    inp    = (tc.get("input") or "").strip()
+    out    = (tc.get("output") or "").strip()
+    dur_ms = tc.get("duration_ms")
 
-        if tool == "exec_command":
-            try:
-                parsed = json.loads(inp)
-                inp = parsed.get("cmd", inp)
-            except Exception:
-                m = re.search(r'"cmd"\s*:\s*"((?:[^"\\]|\\.)*)', inp)
-                if m:
-                    inp = m.group(1).replace("\\n", "\n").replace('\\"', '"')
-            inp = _clean_exec_input(inp)
+    if tool == "exec_command":
+        try:
+            parsed = json.loads(inp)
+            inp = parsed.get("cmd", inp)
+        except Exception:
+            m = re.search(r'"cmd"\s*:\s*"((?:[^"\\]|\\.)*)', inp)
+            if m:
+                inp = m.group(1).replace("\\n", "\n").replace('\\"', '"')
+        inp = _clean_exec_input(inp)
 
-        if tool == "think":
-            out = ""
-        elif tool in ("create_todo", "update_todo", "complete_todo"):
-            try:
-                data = json.loads(out)
-                todos = data.get("created") or data.get("updated") or []
-                if todos:
-                    first = todos[0].get("title", "")
-                    extra = f" (+{len(todos) - 1} more)" if len(todos) > 1 else ""
-                    out = f"{first}{extra}"
-                else:
-                    out = ""
-            except Exception:
-                pass
-        elif out:
-            out = _clean_tool_output(out)
+    if tool == "think":
+        out = ""
+    elif tool in ("create_todo", "update_todo", "complete_todo"):
+        try:
+            data = json.loads(out)
+            todos = data.get("created") or data.get("updated") or []
+            if todos:
+                first = todos[0].get("title", "")
+                extra = f" (+{len(todos) - 1} more)" if len(todos) > 1 else ""
+                out = f"{first}{extra}"
+            else:
+                out = ""
+        except Exception:
+            pass
+    elif out:
+        out = _clean_tool_output(out)
 
-        dur_str = _fmt_duration(dur_ms)
+    text = Text()
+    text.append(f"T{t_num:<3} ", style="bold yellow")
+    text.append(tool, style="bold cyan")
+    if dur_ms is not None:
+        text.append(f"  {_fmt_duration(dur_ms)}", style="dim")
+    text.append("\n")
 
-        # Header: T11  toolname  1.5s
-        activity.append(f"T{t_num:<3} ", style="bold yellow")
-        activity.append(tool, style="bold cyan")
-        if dur_str:
-            activity.append(f"  {dur_str}", style="dim")
-        activity.append("\n")
+    if inp:
+        inp_lines = inp.split("\n")
+        text.append(f"  {inp_lines[0]}\n")
+        for line in inp_lines[1:4]:
+            if line.strip():
+                text.append(f"  {line}\n", style="dim")
 
-        # Command / input (full, let Rich wrap)
-        if inp:
-            first_line = inp.split("\n")[0]
-            rest = inp.split("\n")[1:]
-            activity.append(f"  {first_line}\n")
-            for line in rest[:3]:
-                if line.strip():
-                    activity.append(f"  {line}\n", style="dim")
+    if out:
+        _append_output(text, out)
 
-        # Output with PASS/FAIL/ERROR coloring, multi-line
-        if out:
-            _append_output(activity, out)
-
-        activity.append("\n")  # blank line between entries
-
-    if not shown and not thinking:
-        activity.append("(waiting for first turn…)", style="dim")
-
-    content = Group(
-        status,
-        Rule(style="bright_black"),
-        mid_section,
-        Rule("ACTIVITY", style="bright_black"),
-        activity,
-    )
-
-    border = "bright_green" if is_done else "bright_cyan"
-    subtitle = Text(_fmt_elapsed(elapsed), style="bold white")
-
-    return Panel(content, title=title, subtitle=subtitle, border_style=border, height=term_height)
+    text.append("\n")
+    return text
 
 
 # ---------------------------------------------------------------------------
-# Main loop
+# Textual app
+# ---------------------------------------------------------------------------
+
+class StatusPanel(Static):
+    pass
+
+
+class WatchApp(App):
+    TITLE = "WOWBAGGER"
+
+    CSS = """
+    Screen {
+        layout: vertical;
+        background: $background;
+    }
+    StatusPanel {
+        height: auto;
+        padding: 0 1;
+        background: $surface;
+        border-bottom: heavy $primary-darken-3;
+    }
+    RichLog {
+        height: 1fr;
+        padding: 0 1;
+        border: none;
+        scrollbar-color: $primary-darken-2;
+        scrollbar-color-hover: $primary;
+    }
+    Footer {
+        background: $surface;
+    }
+    """
+
+    BINDINGS = [
+        Binding("q", "quit", "Quit"),
+        Binding("f", "follow", "Follow↓"),
+        Binding("G", "follow", "Follow↓", show=False),
+    ]
+
+    def __init__(self, engagement_dir: Path, interval: int = 2) -> None:
+        super().__init__()
+        self.engagement_dir = engagement_dir
+        self.interval = interval
+        self._rendered_count = 0
+
+    def compose(self) -> ComposeResult:
+        yield StatusPanel()
+        yield RichLog(highlight=False, markup=False, auto_scroll=True, id="log")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._tick()
+        self.set_interval(self.interval, self._tick)
+
+    def _tick(self) -> None:
+        state = collect_state(self.engagement_dir)
+
+        self.query_one(StatusPanel).update(_render_status(state))
+
+        log = self.query_one(RichLog)
+        all_tools = state.get("all_tools", [])
+        for tc in all_tools[self._rendered_count:]:
+            log.write(_render_tool_call(tc))
+        self._rendered_count = len(all_tools)
+
+        eng = self.engagement_dir.name
+        run = state.get("current_run") or ""
+        suffix = f" — {run}" if run and run != eng else ""
+        self.title = f"WOWBAGGER  {eng}{suffix}"
+
+        if state.get("thinking") and self._rendered_count > 0:
+            log.write(Text("⟳ Thinking…\n", style="bold yellow"))
+            self._rendered_count -= 1  # overwrite next tick when tool_end arrives
+
+    def action_follow(self) -> None:
+        self.query_one(RichLog).scroll_end(animate=False)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
 # ---------------------------------------------------------------------------
 
 def run_watch(args: argparse.Namespace) -> int:
@@ -485,24 +522,5 @@ def run_watch(args: argparse.Namespace) -> int:
         return 2
 
     interval = getattr(args, "interval", 2)
-    console = Console()
-
-    state = collect_state(engagement_dir)
-    term_h = console.height
-
-    with Live(
-        make_renderable(state, term_h, console.width),
-        console=console,
-        screen=True,
-        refresh_per_second=4,
-    ) as live:
-        try:
-            while True:
-                state = collect_state(engagement_dir)
-                term_h = console.height
-                live.update(make_renderable(state, term_h, console.width))
-                time.sleep(interval)
-        except KeyboardInterrupt:
-            pass
-
+    WatchApp(engagement_dir, interval).run()
     return 0

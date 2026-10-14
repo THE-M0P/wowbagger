@@ -9,6 +9,7 @@ description = "Evaluation adapters for Wowbagger security benchmark runs"
 requires-python = ">=3.12"
 dependencies = [
     "rich>=15.0.0",
+    "textual>=0.80.0",
     "strix-agent",
 ]
 
