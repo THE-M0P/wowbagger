@@ -107,28 +107,34 @@ engage smoke
 Watch a running `engage orchestrate` or `engage run` in real time — context pressure, specialist history, coordinator picks, tool activity, and live findings:
 
 ```bash
-engage watch ~/engagements/langfuse/chain-001
+engage watch ~/wowbagger-runs/engagements/langfuse/chain-001
 ```
 
-The dashboard uses Rich Live for flicker-free updates and automatic terminal resize. It polls every 2 seconds and takes over the full terminal until you press Ctrl-C:
+The dashboard is a [Textual](https://github.com/Textualize/textual) TUI with a fixed status panel at the top and a scrollable full-history activity log below. It polls every 2 seconds and stays open after the run finishes.
 
 ```
-╭─ WOWBAGGER  chain-001  run-003-explore ───────────────── 00:14:32 ─╮
-│ Specialist 3/9: auth-specialist  Turn 47/120  Context ████████░░░ 78% │
-│ ────────────────────────────────────────────────────────────────── │
-│ COORDINATOR                    │ FINDINGS                          │
-│ ✓ engagement-explore   12r     │ ● Confirmed  2                    │
-│ ✓ recon-specialist      8r     │ ○ Anomalies  1                    │
-│ → auth-specialist      47t     │ ◌ Leads      4                    │
-│ ───────────────── ACTIVITY ─────────────────────────────────────── │
-│ T47  exec_command  curl -H "Authorization: Bearer ..." /api/users  │
-│      → 200 {"id":"proj_123","userId":"user_456"}                   │
-│ T46  exec_command  rg "checkOwnership" src/api/traces.ts           │
-│      → 3 matches at lines 47, 89, 112                              │
-╰────────────────────────────────────────────────────────────────────╯
+ WOWBAGGER  chain-001 — run-003-explore                         00:14:32
+ Specialist 3: auth-specialist  Turn 47/120  Context ████████░░ 78%  ⟳
+ ─────────────────────────────────────────────────────────────────────
+ COORDINATOR              │ FINDINGS
+ ✓ engagement-explore  12r│ ● Confirmed  2
+ ✓ recon-specialist     8r│ ○ Anomalies  1
+ → auth-specialist     47t│ ◌ Leads      4
+ ─────────────────────────────────────────────────────────────────────
+ T47  exec_command  1.2s
+   curl -H "Authorization: Bearer eyJ..." /api/users/list
+   200 {"id":"proj_123","userId":"user_456","role":"admin"}
+
+ T46  exec_command  800ms
+   rg "checkOwnership" src/api/traces.ts
+   3 matches at lines 47, 89, 112
+
+ [q] Quit  [f] Follow↓
 ```
 
 The context pressure bar turns **yellow** above 60% and **red** above 80%. Once it crosses the `--wrap-up-at-pressure` threshold (default 0.85), the agent receives an urgent directive to write its report before the context window is exhausted.
+
+**Keybindings:** `q` quit · `f` / `G` follow tail · trackpad scroll or ↑↓ / Page Up/Down to browse history · turn numbers bold yellow, PASS bold green, FAIL bold red.
 
 ---
 

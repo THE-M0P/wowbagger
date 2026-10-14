@@ -12,14 +12,14 @@ git clone https://github.com/THE-M0P/wowbagger ~/src/wowbagger
 ```
 Contains the Dockerfile, this evals package, and all specialist packs in one place.
 
-**3. Get the sandbox image**
+**2. Get the sandbox image**
 
 Pull from GHCR (fastest):
 ```bash
 docker pull ghcr.io/THE-M0P/wowbagger:latest
 ```
 
-Or build locally:
+Or build locally (takes ~30 min on first build, layers cache on rebuild):
 ```bash
 cd ~/src/wowbagger && docker build -t wowbagger-sandbox:local -f containers/Dockerfile .
 ```
@@ -28,26 +28,29 @@ cd ~/src/wowbagger && docker build -t wowbagger-sandbox:local -f containers/Dock
 ```bash
 pip install -e ~/src/wowbagger/evals/
 ```
+This installs the `engage` CLI and its dependencies (`rich`, `textual`, `strix-agent`).
 
 **4. Configure**
 ```bash
+mkdir -p ~/.config/wowbagger-evals
 cp ~/src/wowbagger/evals/config.example.toml ~/.config/wowbagger-evals/config.toml
-# Edit: set specialist_pack = "~/src/wowbagger/specialists/multi-specialist"
-#       set sandbox_image = "wowbagger-sandbox:local"
+# Edit: set specialist_pack, sandbox_image, and your LLM at minimum
 ```
 
 ## Commands
 
 ### Verify the image works
 ```bash
-engage smoke --sandbox-image wowbagger-sandbox:local --llm anthropic/claude-sonnet-5-5
+engage smoke
 ```
 Runs all tools against a loopback target inside the container. Exits 0 if everything passes.
+Report lands in `~/wowbagger-runs/smoke/smoke-<timestamp>/smoke-master-report.md`.
+With `--max-smoke-loops N` (default 5) it loops if the context runs out mid-test, picking up where it left off.
 
 ### Single specialist chain (BountyBench)
 ```bash
 engage run --project lunary \
-    --engagement ~/engagements/lunary/chain-001 \
+    --engagement ~/wowbagger-runs/engagements/lunary/chain-001 \
     --rounds 5 --stop-on-dry-runs 2 \
     --llm anthropic/claude-sonnet-5-5
 ```
@@ -55,7 +58,7 @@ engage run --project lunary \
 ### Full multi-specialist orchestration (BountyBench)
 ```bash
 engage orchestrate --project agentscope \
-    --engagement ~/engagements/agentscope/chain-001 \
+    --engagement ~/wowbagger-runs/engagements/agentscope/chain-001 \
     --rounds-per-specialist 5 \
     --llm anthropic/claude-sonnet-5-5
 ```
@@ -66,9 +69,16 @@ Runs engagement-explore → LLM coordinator picks next specialist → repeat unt
 engage run --mode target \
     --target https://app.example.com \
     --instructions ~/programs/example/instructions.md \
-    --engagement ~/engagements/example/chain-001 \
+    --engagement ~/wowbagger-runs/engagements/example/chain-001 \
     --llm anthropic/claude-sonnet-5-5
 ```
+
+### Watch a running engagement
+```bash
+engage watch ~/wowbagger-runs/engagements/example/chain-001
+```
+Textual TUI: status panel (turn, context pressure, findings) + scrollable full-history activity log.
+Keybindings: `q` quit · `f`/`G` follow tail · trackpad or ↑↓/Page Up/Down to scroll back.
 
 ## Configuration
 

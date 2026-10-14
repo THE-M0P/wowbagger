@@ -38,6 +38,8 @@ pip install -e ~/src/wowbagger/evals/
 engage --help   # should print usage
 ```
 
+This installs the `engage` CLI and its Python dependencies (`rich`, `textual`, `strix-agent`). No separate strix install needed.
+
 ## 4. Configure
 
 ```bash
@@ -120,10 +122,12 @@ engage orchestrate --mode whitebox \
 
 **Watch a running engagement in a second terminal:**
 ```bash
-engage watch ~/engagements/agentscope/chain-001
+engage watch ~/wowbagger-runs/engagements/agentscope/chain-001
 ```
 
-Shows context pressure, coordinator specialist picks, live findings count, and recent tool activity. Updates every 2 seconds, flicker-free. Press Ctrl-C to exit.
+Textual TUI with a status panel (turn, context pressure bar, findings) and a scrollable full-history activity log. Stays open after the run finishes.
+
+Keybindings: `q` quit · `f` / `G` jump to tail · trackpad scroll or ↑↓ / Page Up/Down to browse history.
 
 ### Context pressure and turn limits
 
