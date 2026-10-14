@@ -242,6 +242,32 @@ def _clean_tool_output(out: str) -> str:
     return out.replace('\t', ' ').strip()
 
 
+def _fmt_duration(ms: int | None) -> str:
+    if ms is None:
+        return ""
+    return f"{ms / 1000:.1f}s" if ms >= 1000 else f"{ms}ms"
+
+
+def _clean_exec_input(inp: str) -> str:
+    """Strip leading bash helper function definitions (ok/fail/check_json etc.)."""
+    cleaned = re.sub(
+        r'^(?:\s*\w[\w_]*\s*\(\s*\)\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*)+',
+        '', inp, flags=re.DOTALL,
+    ).strip()
+    return cleaned if cleaned else inp
+
+
+def _append_output(text: Text, out: str, avail: int) -> None:
+    """Append tool output, coloring PASS bold-green and FAIL bold-red."""
+    for part in re.split(r'\b(PASS|FAIL)\b', _truncate(out, avail)):
+        if part == "PASS":
+            text.append("PASS", style="bold green")
+        elif part == "FAIL":
+            text.append("FAIL", style="bold red")
+        else:
+            text.append(part, style="dim")
+
+
 def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: int = 120) -> Panel:
     chain_state    = state.get("chain_state", {})
     exhausted      = chain_state.get("exhausted", [])
@@ -345,14 +371,15 @@ def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: in
         mid_section.append(str(lead), style="bold white")
 
     # --- Activity feed ---
-    # Reserve rows: panel borders (2) + title (1) + status (1) + rule (1) +
-    # mid section (~3 min) + rule (1) + footer (1)
+    # 3 lines per entry: header + output + blank separator
     reserved = 10 + (len(exhausted) + (1 if current else 0) if chain_state else 0)
-    max_tc = max(2, (term_height - reserved) // 2)
+    max_tc = max(2, (term_height - reserved) // 3)
+    # usable width: panel borders (2) + Rich padding (4) + left gutter (~6)
+    avail = max(40, term_width - 12)
 
     activity = Text(justify="left")
     if thinking:
-        activity.append("⟳ Thinking…\n", style="bold yellow")
+        activity.append("⟳ Thinking…\n\n", style="bold yellow")
 
     shown = list(reversed(recent[-max_tc:]))
     for tc in shown:
@@ -370,20 +397,27 @@ def make_renderable(state: dict[str, Any], term_height: int = 40, term_width: in
                 m = re.search(r'"cmd"\s*:\s*"((?:[^"\\]|\\.)*)', inp)
                 if m:
                     inp = m.group(1).replace("\\n", " ").replace('\\"', '"')
+            inp = _clean_exec_input(inp)
 
         if out:
             out = _clean_tool_output(out)
 
-        # panel borders (2) + padding (4) + "T11  toolname  " prefix (~18)
-        avail = max(40, term_width - 24)
+        dur_str = _fmt_duration(dur_ms)
+
+        # Header: T11  toolname  1.5s  command...
         activity.append(f"T{t_num:<3} ", style="dim")
-        activity.append(tool, style="cyan")
-        activity.append(f"  {_truncate(inp, avail)}")
-        if dur_ms is not None:
-            activity.append(f" ({dur_ms}ms)", style="dim")
-        activity.append("\n")
+        activity.append(tool, style="bold cyan")
+        if dur_str:
+            activity.append(f"  {dur_str}", style="dim")
+        activity.append(f"  {_truncate(inp, avail)}\n")
+
+        # Output line with PASS/FAIL coloring
         if out:
-            activity.append(f"     → {_truncate(out, avail)}\n", style="dim")
+            activity.append("  → ", style="dim")
+            _append_output(activity, out, avail)
+            activity.append("\n")
+
+        activity.append("\n")  # blank line between entries
 
     if not shown and not thinking:
         activity.append("(waiting for first turn…)", style="dim")
