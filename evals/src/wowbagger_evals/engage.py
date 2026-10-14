@@ -528,6 +528,12 @@ def _build_and_run_target(
 def run_chain(args: argparse.Namespace) -> int:
     mode = args.mode
     engagement_dir = args.engagement.expanduser().resolve()
+    if args.strix is None:
+        print(
+            "engage: strix not found — install strix-agent or set STRIX_BIN / config strix",
+            file=sys.stderr,
+        )
+        return 2
     strix = args.strix.expanduser()
     notify = not args.no_notify
     max_rounds = args.rounds
@@ -542,6 +548,14 @@ def run_chain(args: argparse.Namespace) -> int:
         specialist_pack = _TARGET_SPECIALIST_PACK
     else:
         specialist_pack = _DEFAULT_SPECIALIST_PACK
+
+    if specialist_pack is None:
+        print(
+            "engage: specialist_pack not configured — set specialist_pack in "
+            "~/.config/wowbagger-evals/config.toml or pass --specialist-pack",
+            file=sys.stderr,
+        )
+        return 2
 
     # Args forwarded unchanged to every build call
     common_kwargs: dict[str, Any] = {
@@ -758,8 +772,22 @@ def run_smoke(args: argparse.Namespace) -> int:
     agent could finish; each continuation pass gets the previous report staged
     into the workspace so the agent knows what was already covered.
     """
+    if args.strix is None:
+        print(
+            "engage: strix not found — install strix-agent or set STRIX_BIN / config strix",
+            file=sys.stderr,
+        )
+        return 2
     strix = args.strix.expanduser()
-    specialist_pack = (args.specialist_pack or _SMOKE_SPECIALIST_PACK).expanduser().resolve()
+    specialist_pack_arg = args.specialist_pack or _SMOKE_SPECIALIST_PACK
+    if specialist_pack_arg is None:
+        print(
+            "engage: specialist_pack not configured — set specialist_pack in "
+            "~/.config/wowbagger-evals/config.toml or pass --specialist-pack",
+            file=sys.stderr,
+        )
+        return 2
+    specialist_pack = specialist_pack_arg.expanduser().resolve()
     notify = not args.no_notify
 
     smoke_profile = specialist_pack / "profiles" / "smoke-test.md"
@@ -1070,6 +1098,12 @@ def _coordinator_call(
 
 def run_orchestrate(args: argparse.Namespace) -> int:
     engagement_dir = args.engagement.expanduser().resolve()
+    if args.strix is None:
+        print(
+            "engage: strix not found — install strix-agent or set STRIX_BIN / config strix",
+            file=sys.stderr,
+        )
+        return 2
     strix = args.strix.expanduser()
     notify = not args.no_notify
 
@@ -1079,6 +1113,14 @@ def run_orchestrate(args: argparse.Namespace) -> int:
         specialist_pack = _TARGET_SPECIALIST_PACK
     else:
         specialist_pack = _DEFAULT_SPECIALIST_PACK
+
+    if specialist_pack is None:
+        print(
+            "engage: specialist_pack not configured — set specialist_pack in "
+            "~/.config/wowbagger-evals/config.toml or pass --specialist-pack",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         manifest = _load_specialists_json(specialist_pack)

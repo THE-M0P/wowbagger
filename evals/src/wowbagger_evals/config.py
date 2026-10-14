@@ -45,27 +45,34 @@ def _which(name: str) -> Path | None:
 # Resolved defaults — used as fallbacks when CLI flags are not provided
 # ---------------------------------------------------------------------------
 
-STRIX_BIN: Path = (
+STRIX_BIN: Path | None = (
     _resolve("STRIX_BIN", "strix")
     or _which("strix")
-    or Path("/home/JBHook/src/wowbagger/.venv/bin/strix")
 )
 
-SPECIALIST_PACK: Path = (
+# Auto-detect specialists/ from the cloned repo layout when installed in editable mode.
+# __file__ = <repo>/evals/src/wowbagger_evals/config.py
+# → .parent×3 = evals/  → .parent = repo root  → repo root / "specialists"
+_repo_specialists: Path | None = None
+_candidate = Path(__file__).parent.parent.parent.parent / "specialists"
+if _candidate.is_dir():
+    _repo_specialists = _candidate
+
+SPECIALIST_PACK: Path | None = (
     _resolve("ENGAGE_SPECIALIST_PACK", "specialist_pack")
-    or Path("/home/JBHook/ai-lab/specialists/bug-bounty")
+    or (_repo_specialists / "bug-bounty" if _repo_specialists else None)
 )
 
 # Smoke-test pack — must contain profiles/smoke-test.md.
-SMOKE_SPECIALIST_PACK: Path = (
+SMOKE_SPECIALIST_PACK: Path | None = (
     _resolve("ENGAGE_SMOKE_SPECIALIST_PACK", "smoke_specialist_pack")
-    or Path("/home/JBHook/ai-lab/specialists/multi-specialist")
+    or (_repo_specialists / "multi-specialist" if _repo_specialists else None)
 )
 
-TARGET_SPECIALIST_PACK: Path = (
+TARGET_SPECIALIST_PACK: Path | None = (
     _resolve("ENGAGE_TARGET_SPECIALIST_PACK", "target_specialist_pack")
     or _resolve("ENGAGE_H1_SPECIALIST_PACK", "h1_specialist_pack")  # legacy alias
-    or Path("/home/JBHook/ai-lab/specialists/bug-bounty-target")
+    or (_repo_specialists / "bug-bounty-target" if _repo_specialists else None)
 )
 
 # The evals repo itself — used only for git commit recording in manifests.
