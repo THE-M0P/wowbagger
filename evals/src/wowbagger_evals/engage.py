@@ -1041,7 +1041,7 @@ def _build_coordinator_prompt(
 def _llm_anthropic(model: str, prompt: str, api_key: str) -> str:
     body = json.dumps({
         "model": model,
-        "max_tokens": 64,
+        "max_tokens": 2048,
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
     req = urllib.request.Request(
@@ -1063,7 +1063,7 @@ def _llm_openai_compat(model: str, prompt: str, api_base: str, api_key: str) -> 
     url = f"{api_base.rstrip('/')}/chat/completions"
     body = json.dumps({
         "model": model,
-        "max_tokens": 64,
+        "max_tokens": 2048,
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
     req = urllib.request.Request(
