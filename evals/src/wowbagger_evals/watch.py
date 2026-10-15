@@ -130,6 +130,8 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         "elapsed": 0,
         "current_run": None,
         "active_profile": None,
+        "current_phase": None,
+        "specialist_round": None,
         "status": "idle",
     }
 
@@ -158,6 +160,17 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
     profile_files = list(run_dir.glob("*-profile.md"))
     if profile_files:
         state["active_profile"] = profile_files[0].stem.replace("-profile", "")
+
+    m = re.match(r"run-(\d+)-(explore|audit)$", run_dir.name)
+    if m:
+        state["current_phase"] = "specialist" if m.group(2) == "explore" else "auditor"
+        rounds_by = chain_state.get("rounds_by_specialist", {})
+        exhausted_rounds = sum(rounds_by.values())
+        explore_dirs = sum(
+            1 for d in engagement_dir.iterdir()
+            if re.match(r"run-\d+-explore$", d.name) and d.is_dir()
+        )
+        state["specialist_round"] = max(1, explore_dirs - exhausted_rounds)
 
     events = _read_jsonl(current_audit)
     if not events:
@@ -347,6 +360,12 @@ def _render_status(state: dict[str, Any]) -> Any:
         if current:
             coord.append("→ ", style="bold yellow")
             coord.append(_truncate(current, 22), style="bold white")
+            phase = state.get("current_phase", "")
+            rnd = state.get("specialist_round")
+            if rnd and phase:
+                coord.append(f"  r{rnd}·{phase}", style="dim")
+            elif phase:
+                coord.append(f"  {phase}", style="dim")
             coord.append(f"  {turn}t\n", style="dim")
 
         finds = Text()
