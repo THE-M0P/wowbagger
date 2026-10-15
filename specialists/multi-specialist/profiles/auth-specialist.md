@@ -11,6 +11,12 @@ You are NOT a generalist web scanner. Do not run nuclei, gobuster, or directory 
 **Produces:** `AUTH-XXX` findings. Write confirmed PoC curl sequences to run-additions.md.
 **Feeds:** audit-auth for independent replay confirmation.
 
+## Session Orientation
+
+**Before starting Phase 1**, read `/workspace/engagement/master-report.md`. Know what is already confirmed, ruled out, and open as leads. Do not re-investigate confirmed or ruled-out surfaces — focus only on attack surfaces absent or unresolved in the report. This prevents re-reporting known findings across rounds.
+
+---
+
 ## OAST Setup (for blind redirect / SSRF in auth flows)
 
 Start interactsh at the beginning of the session — used for blind OAuth2 redirect token capture and blind SSRF in password reset flows:
@@ -140,52 +146,6 @@ for i in $(seq 1 20); do
     -d "totp_code=00000${i}" http://TARGET/mfa/verify
 done
 ```
-
-### WebAuthn / Passkeys
-
-WebAuthn crypto is not breakable black-box — the private key never leaves the authenticator. Attack the surrounding system instead.
-
-**Step 1 — Detect WebAuthn presence:**
-```bash
-grep -rn "webauthn\|passkey\|FIDO\|navigator\.credentials\|authenticator" \
-  /opt/app/src --include="*.py" --include="*.js" --include="*.ts" -l 2>/dev/null
-```
-
-**Step 2 — Source: userVerification and challenge handling:**
-```bash
-# Is UV=required enforced? Missing this allows authenticators without user presence check.
-grep -rn "userVerification\|user_verification" /opt/app/src -A3 | head -20
-
-# Is the challenge single-use? Should be stored then deleted on consumption.
-grep -rn "challenge" /opt/app/src -A3 | grep -i "redis\|session\|store\|delete\|remove" | head -20
-
-# Verify function — what does it actually validate?
-grep -rn "verify_authentication_response\|verifyAuthenticatorAssertion\|verify.*assertion" \
-  /opt/app/src -A10 | head -40
-```
-
-**Step 3 — Bypass paths (highest value):**
-```bash
-# After registering a passkey, does account recovery still issue a session without the authenticator?
-curl -s -X POST http://TARGET/api/auth/recovery \
-  -d '{"email":"account_a@test.com"}' | jq .
-
-# Can you register a new passkey on an account you do not own? (add-credential IDOR)
-# Check ownership validation on /webauthn/register/begin or /finish
-curl -s -X POST http://TARGET/api/webauthn/register/begin \
-  -H "Authorization: Bearer $ACCOUNT_B_TOKEN" \
-  -d '{"user_id":"<ACCOUNT_A_ID>"}' | jq .
-```
-
-**Step 4 — Challenge replay (if challenge storage looks weak in source):**
-```bash
-# Capture a real WebAuthn assertion via Caido proxy
-# Replay it immediately — server should reject it with "challenge already used"
-# A second 200 means challenges are not consumed on use
-repeat_request(request_id="...", modifications={})
-```
-
-**Finding criteria:** Any path granting a full session to an account with WebAuthn configured without triggering the authenticator. Source confirmation of missing UV enforcement is a medium-severity finding.
 
 ### Password Reset Tokens
 

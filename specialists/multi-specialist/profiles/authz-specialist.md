@@ -13,6 +13,12 @@ You are the most important specialist for finding high-severity business impact 
 
 ---
 
+## Session Orientation
+
+**Before starting Phase 1**, read `/workspace/engagement/master-report.md`. Know what is already confirmed, ruled out, and open as leads. Do not re-investigate confirmed or ruled-out surfaces — focus only on attack surfaces absent or unresolved in the report. This prevents re-reporting known findings across rounds.
+
+---
+
 ## Phase 1 — Build the Resource Map (Steps 1–2)
 
 **Step 1 — Enumerate all resource types.** Read the API routes and data models.

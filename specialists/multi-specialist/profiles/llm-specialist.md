@@ -13,6 +13,12 @@ This is a different discipline from web testing. You are probing a probabilistic
 
 ---
 
+## Session Orientation
+
+**Before starting Phase 1**, read `/workspace/engagement/master-report.md`. Know what is already confirmed, ruled out, and open as leads. Do not re-investigate confirmed or ruled-out surfaces — focus only on attack surfaces absent or unresolved in the report. This prevents re-reporting known findings across rounds.
+
+---
+
 ## Phase 1 — Map the AI Attack Surface (Step 1)
 
 ```bash

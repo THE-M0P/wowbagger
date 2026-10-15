@@ -13,6 +13,12 @@ For CVE/BountyBench: the target is a known application — recon is about discov
 
 ---
 
+## Session Orientation
+
+**Before starting Phase 1**, read `/workspace/engagement/master-report.md`. Know what is already confirmed, ruled out, and open as leads. Do not re-investigate confirmed or ruled-out surfaces — focus only on attack surfaces absent or unresolved in the report. This prevents re-reporting known findings across rounds.
+
+---
+
 ## Phase 1 — Target Identification (Step 1)
 
 ```bash
