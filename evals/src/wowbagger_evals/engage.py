@@ -1004,12 +1004,15 @@ def _build_coordinator_prompt(
         f"Current findings on the target:\n<findings>\n{report_excerpt}\n</findings>\n\n"
         f"Specialists already exhausted (do NOT pick these): {exhausted_str}\n\n"
         f"Available specialists:\n{available_lines}\n\n"
-        f"Pick ONE specialist key from the available list that is most likely to find new "
-        f"vulnerabilities given the findings above. "
+        f"Pick ONE specialist key from the available list that is most likely to find a "
+        f"DIFFERENT class of vulnerability from what has already been found. "
         f"If there are no findings yet, you MUST pick an exploration or recon specialist — "
         f"never return 'done' when the engagement has not started. "
-        f"Return ONLY the key (e.g. \"auth\") or \"done\" if no specialist is likely to be "
-        f"productive and findings already exist. One word, no explanation, no punctuation."
+        f"There are {len(available)} specialist(s) available that have NOT yet run — you should "
+        f"almost always pick one of them. Return 'done' ONLY if you are certain that every "
+        f"single remaining specialist would find nothing new on this specific target "
+        f"(not just more of the same class already found). "
+        f"Return ONLY the specialist key (e.g. \"auth\") or \"done\". One word, no explanation, no punctuation."
     )
 
 
