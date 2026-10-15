@@ -19,20 +19,38 @@ You are an injection findings auditor. You receive an INJ-XXX finding from the i
 
 ---
 
+## Step 0 — Read the Finding
+
+Before touching source or the live target, read the finding from `run-additions.md`:
+
+```bash
+cat /workspace/engagement/run-additions.md
+```
+
+Identify: finding ID (INJ-XXX), vuln class, cited file:line, endpoint, payload used, and what the explorer observed. Everything in Steps 1 and 2 flows from this.
+
+Also read `instructions.md` for the test account credentials you will use:
+
+```bash
+cat /workspace/engagement/instructions.md | grep -A20 "Accounts\|credentials\|test user"
+```
+
+---
+
 ## Step 1 — Verify the Source Claim
 
-Before touching the live target, re-read the source file:line cited by the explorer. Confirm:
+Before touching the live target, re-read the source file:line cited by the explorer. Substitute the actual file path and line number from the INJ-XXX finding. Confirm:
 - The sink exists at the cited location
 - The taint path as described is plausible (data flows from input to sink)
 - No sanitisation exists on the path that the explorer may have missed
 
 ```bash
-# Re-read the cited sink location
-sed -n '<LINE-20>,<LINE+20>p' /workspace/<target>/<file>
+# Re-read the cited sink location (substitute FILE and LINE from the finding)
+sed -n '$((LINE-20)),$((LINE+20))p' /workspace/<target>/<FILE>
 
 # Check for validation helpers the explorer may have missed
 grep -n "validate\|sanitize\|escape\|encode\|allowlist\|blocklist" \
-  /workspace/<target>/<file> | head -20
+  /workspace/<target>/<FILE> | head -20
 ```
 
 **If the source claim is wrong:** mark as REJECTED with reason. Do not attempt live replay of a non-existent path.
@@ -148,6 +166,21 @@ Confirm the finding is specific, not a general mis-classification:
 - **Command injection:** confirm the sleep delay only occurs with the injected payload, not on normal requests.
 - **Path traversal:** confirm a non-traversal path returns the expected 404/403 (the diff is real).
 - **Open redirect:** confirm same-origin redirects work correctly (the app is not simply passing all Location values through).
+
+---
+
+## Verdict Criteria
+
+Use these to decide CONFIRMED vs REJECTED for each class. A REJECTED finding stops here — record the reason, do not promote to master-report.
+
+| Class | CONFIRMED when | REJECTED when |
+|-------|---------------|---------------|
+| SSRF | OOB callback received from the target server, OR internal service banner/error in response | No OOB fire after 3 triggers; URL only used client-side; server validates and blocks the request |
+| Stored SSRF | OOB callback received when the stored job runs (may require triggering the job) | Endpoint returns 403 / 400 before storage; entitlement gate prevents access; callback never fires after job trigger |
+| SSTI | Response contains evaluated arithmetic (e.g. `49` from `{{7*7}}`) | Response reflects the literal string `{{7*7}}`; response is a server error with no evaluation; template engine not present on the live target |
+| Command injection | Time-based: response time ≥5s with `; sleep 5`, baseline <1s; OR OOB fire on `; curl your-id.oast.pro` | Sleep delay not reproducible; OOB never fires; input is sanitised/quoted before shell invocation |
+| Path traversal | `/etc/passwd` content (or `package.json` / known file) returned; OR unambiguous differential (valid path vs traversal vs nonexistent return different status/body) | 403/404 identical for all inputs; `path.resolve` + `startsWith` guard confirmed in source after re-read |
+| Open redirect | `Location:` header contains the attacker-supplied URL verbatim | `Location:` redirects to an internal error page; redirect target validated against an allowlist; bypass attempts all return 400/redirect-to-self |
 
 ---
 

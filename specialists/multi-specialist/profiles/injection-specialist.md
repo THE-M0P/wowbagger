@@ -120,17 +120,25 @@ Work in this priority order: **SSRF → command injection → path traversal →
 
 ### SSRF taint trace
 
-For each HTTP client sink:
-```bash
-# Read the function containing the sink — understand the full call
-# Then find what calls it and what it passes
-grep -rn "function.*<sink_function>\|const.*<sink_function>\|<sink_function> =" \
-  /workspace --include="*.ts" | grep -v "node_modules" | head -10
+For each HTTP client sink hit in Phase 1, read the surrounding 30 lines to find what variable holds the URL, then trace that variable backward:
 
-# Where is the URL variable set? Trace up the call stack
-# If URL comes from a DB field, find where that field is written
-grep -rn "<url_field>\s*=" /workspace --include="*.ts" \
-  | grep -v "test\|spec\|node_modules" | head -20
+```bash
+# Read ~30 lines around the sink hit to understand what URL variable is used
+# (substitute the actual file:line from the Phase 1 grep output)
+sed -n '$((LINE-15)),$((LINE+15))p' /workspace/<file>
+
+# Find all assignments to that URL variable across the codebase
+grep -rn "<urlVarName>\s*=\|<urlVarName>:" \
+  /workspace --include="*.ts" | grep -v "node_modules\|test\|spec\|\.d\.ts" | head -20
+
+# If the URL comes from a DB/config field, find where that field is written
+# (substitute the actual field name from the DB model/schema)
+grep -rn "\.webhookUrl\s*=\|\.endpoint\s*=\|\.callbackUrl\s*=\|\.targetUrl\s*=" \
+  /workspace --include="*.ts" | grep -v "node_modules\|test\|spec" | head -20
+
+# Find the route handler that writes the field
+grep -rn "body\.\|req\.\|params\." /workspace/src/api/<relevant-file>.ts \
+  | grep -i "url\|webhook\|endpoint\|callback" | head -20
 ```
 
 **Key patterns to look for:**
@@ -146,41 +154,72 @@ grep -rn "<url_field>\s*=" /workspace --include="*.ts" \
 
 ### Command injection taint trace
 
-For each `exec`/`spawn` sink:
+For each `exec`/`spawn` sink, read the surrounding code to identify the command string, then trace the variable backward:
+
 ```bash
-# Read the full function — is the shell string built with template literal or concat?
-# Look for: `cmd ${userParam}`, "cmd " + userParam, string interpolation
-grep -rn -A5 "execSync\|exec(" /workspace/path/to/file.ts \
-  | grep -v "node_modules" | head -40
+# Read 30 lines around the exec sink (substitute actual file:line from Phase 1)
+sed -n '$((LINE-15)),$((LINE+15))p' /workspace/<file>
+
+# Find all places the command variable is built or concatenated
+# If the command is built from a variable named e.g. `cmd` or `command`:
+grep -rn "cmd\s*=\|command\s*=\|args\s*=" \
+  /workspace --include="*.ts" | grep -v "node_modules\|test\|spec\|\.d\.ts" | head -20
+
+# Find where that variable's value ultimately comes from (req/body/params)
+grep -rn "req\.body\.\|req\.query\.\|req\.params\.\|body\.\|params\." \
+  /workspace/src --include="*.ts" | grep -i "cmd\|command\|exec\|script\|args\|path\|file" \
+  | grep -v "node_modules\|test\|spec" | head -20
 ```
 
-**Key patterns:** build scripts that accept user-supplied paths, CLI tool wrappers where arguments include user data, admin operations that shell out.
+**Key patterns:** build/format scripts accepting user-supplied paths; CLI wrappers where user data flows into argument strings; admin operations that shell out with user-configurable parameters.
 
 ### Path traversal taint trace
 
-For each `fs.readFile`/`path.join` sink:
+For each `fs.readFile`/`path.join`/`createReadStream` sink, read the surrounding code to identify the path variable, then trace it backward:
+
 ```bash
-# Read the surrounding code — is the filename/path from user input?
-# Check: does path.resolve or normalization happen before the read?
-# Check: is there a startsWith(baseDir) guard AFTER normalization?
+# Read 30 lines around the file-access sink (substitute actual file:line)
+sed -n '$((LINE-15)),$((LINE+15))p' /workspace/<file>
+
+# Find all assignments to that path variable
+grep -rn "filePath\s*=\|fileName\s*=\|targetPath\s*=\|file\s*=\|p\s*=\|filepath\s*=" \
+  /workspace/src --include="*.ts" | grep -v "node_modules\|test\|spec\|\.d\.ts" | head -20
+
+# Is it guarded? Look for the actual guard pattern:
+# SAFE:   resolved = path.resolve(base, input); if (!resolved.startsWith(base)) throw
+# UNSAFE: path.join(base, input) — join does NOT prevent traversal
+grep -rn "path\.resolve\|startsWith\|normalize\|realpath" /workspace/src \
+  --include="*.ts" | grep -v "node_modules\|test\|spec" | head -15
 ```
 
-**`path.join` alone does NOT prevent traversal** — `path.join('/base', '../../etc/passwd')` = `/etc/passwd`. The guard must be: `resolved = path.resolve(base, userInput); if (!resolved.startsWith(base)) throw`.
+**`path.join` alone does NOT prevent traversal** — `path.join('/base', '../../etc/passwd')` resolves to `/etc/passwd`. Only a `path.resolve` + `startsWith(base)` check after resolution is safe.
 
 ### SSTI taint trace
 
-For each template render sink:
-```bash
-# Is the template string itself user-controlled, or just the template variables?
-# User-controlled template string = SSTI (critical)
-# User-controlled template variables only = depends on autoescape config
+For each template render sink, the key question is whether the **template string itself** is user-controlled (critical) or only the template **variables** (depends on autoescape):
 
-# Check autoescape config
-grep -rn "autoescape\|escape\|safe\|noescape" /workspace --include="*.ts" \
-  | grep -v "node_modules\|test\|spec" | head -10
+```bash
+# Read 30 lines around the render sink (substitute actual file:line)
+sed -n '$((LINE-15)),$((LINE+15))p' /workspace/<file>
+
+# Is the first argument to render() a static string or a variable?
+# Static: nunjucks.render('emails/welcome.html', vars)  ← safe template, vars only
+# Variable: nunjucks.renderString(userTemplate, vars)   ← SSTI if userTemplate is user input
+grep -rn "renderString\|compileString\|new Template(\|Template(" \
+  /workspace --include="*.ts" --include="*.py" \
+  | grep -v "node_modules\|test\|spec\|\.d\.ts" | head -20
+
+# Find where the template string variable comes from
+grep -rn "template\s*=\|subject\s*=\|body\s*=\|content\s*=" \
+  /workspace/src --include="*.ts" | grep -v "node_modules\|test\|spec" | head -20
+
+# For variable-injection cases (not template string): check autoescape
+grep -rn "autoescape\|escape.*false\|safe\|noescape\|markSafe\|\|safe" \
+  /workspace --include="*.ts" --include="*.py" \
+  | grep -v "node_modules\|test\|spec" | head -15
 ```
 
-**High-value pattern:** email templates where a user-configurable subject/body field is rendered as a Nunjucks/Handlebars template (common in notification systems).
+**High-value pattern:** email notification systems where a user-configurable subject/body field is passed to `renderString()` rather than `render()` — common in SaaS notification builders.
 
 ### Open redirect taint trace
 
