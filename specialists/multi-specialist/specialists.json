@@ -31,7 +31,7 @@
     "explorer": "profiles/binary-re.md",
     "auditor": "profiles/audit-binary.md",
     "description": "Binary reverse engineering: memory corruption, format string bugs, ROP chains, native code exploitation",
-    "covers": ["memory corruption", "format string bugs", "ROP chains", "buffer overflow", "native binary exploitation", "symbolic execution"],
+    "covers": ["memory corruption", "buffer overflow", "use-after-free", "integer overflows", "format string bugs", "ROP chains", "native binary exploitation", "symbolic execution"],
     "triggers": "native binaries, C or C++ components, memory corruption indicators, CTF-style binary challenge, buffer overflow"
   },
   "cloud": {
@@ -45,14 +45,14 @@
     "explorer": "profiles/protocol-explorer.md",
     "auditor": "profiles/audit-protocol.md",
     "description": "Non-HTTP protocol exploitation: gRPC, WebSocket, MQTT, Redis, custom binary protocols",
-    "covers": ["gRPC", "WebSocket/CSWSH", "MQTT", "Redis", "non-HTTP protocol exploitation", "protocol downgrade"],
+    "covers": ["gRPC", "WebSocket/CSWSH", "LDAP", "SMTP", "MQTT", "Redis", "non-HTTP protocol exploitation", "protocol downgrade"],
     "triggers": "gRPC endpoints, WebSocket upgrade, non-HTTP ports, IoT or messaging protocols, protocol downgrade"
   },
   "llm": {
     "explorer": "profiles/llm-specialist.md",
     "auditor": "profiles/audit-llm.md",
     "description": "LLM-specific attacks: prompt injection, indirect injection via tool output, jailbreaks, model extraction, RAG poisoning",
-    "covers": ["prompt injection", "indirect injection via tool output", "MCP protocol attacks", "tool call abuse", "RAG poisoning", "model extraction", "LLM endpoint abuse"],
+    "covers": ["prompt injection", "system prompt extraction", "indirect injection via tool output", "MCP protocol attacks", "tool call abuse", "RAG poisoning", "model extraction", "LLM endpoint abuse"],
     "triggers": "LLM or AI features, chatbot, tool-calling agents, RAG pipeline, model API exposure, AI-generated content"
   },
   "recon": {
