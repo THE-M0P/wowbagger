@@ -184,7 +184,7 @@ for line in open('/tmp/katana.jsonl'):
 # Extract endpoints from JS files
 for jsurl in $(python3 -c "
 import json
-for line in open('/tmp/katana.json'):
+for line in open('/tmp/katana.jsonl'):
     d = json.loads(line)
     ep = d.get('request',{}).get('endpoint','')
     if ep.endswith('.js') and 'node_modules' not in ep: print(ep)
@@ -285,6 +285,19 @@ After completing all phases, write `/workspace/engagement/surface-map.md`:
 1. Unauthenticated admin endpoint at /admin
 2. GraphQL AdminUser type — IDOR probable
 3. Actuator /env endpoint leaking credentials
+```
+
+If any findings during recon are **immediately exploitable** (exposed `.git`, `.env`, actuator leaking secrets, open S3 bucket, live API key), write them as `RECON-XXX` entries in `/workspace/engagement/run-additions.md` so audit-recon can confirm them. Surface-map.md is the surface inventory; run-additions.md carries the actionable findings.
+
+```markdown
+## RECON-001 — Exposed .git Directory (CRITICAL)
+
+**URL:** http://TARGET/.git/HEAD
+**Evidence:** HTTP 200, content: `ref: refs/heads/main`
+**Type:** .git repository exposure
+**Dynamic verification:** `curl -s http://TARGET/.git/HEAD` returns git ref line
+**Impact:** Full source code recoverable; may contain hardcoded credentials
+**Status:** pending audit confirmation
 ```
 
 ---

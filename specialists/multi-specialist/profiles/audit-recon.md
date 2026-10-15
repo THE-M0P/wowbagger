@@ -20,6 +20,25 @@ Recon findings can become stale (CNAME gets fixed, bucket gets closed, secret ge
 
 ---
 
+## Step 0 — Read the Finding
+
+Before verifying anything live, read the finding from `surface-map.md` and `run-additions.md`:
+
+```bash
+cat /workspace/engagement/surface-map.md | grep -A20 "Interesting Findings\|Attack Leads"
+cat /workspace/engagement/run-additions.md 2>/dev/null
+```
+
+Identify: finding type (`.git` / `.env` / actuator / S3 bucket / leaked credential), the exact URL or path, and what the recon-specialist observed. Confirm the URL responds before spending turns on deep verification:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" <URL_FROM_FINDING>
+```
+
+If 404 or connection refused, mark REJECTED — the condition has rotated or been fixed.
+
+---
+
 ## Exposed Sensitive Files
 
 ### .git Repository Exposure
@@ -141,6 +160,18 @@ curl -s -H "Authorization: Bearer <LEAKED_KEY>" \
 ```
 
 **Do NOT:** make purchases, read customer data beyond confirming the key works, or persist access.
+
+---
+
+## Verdict Criteria
+
+| Finding type | CONFIRMED when | REJECTED when |
+|-------------|---------------|---------------|
+| `.git` exposure | `/.git/HEAD` returns 200 with valid git ref AND pack objects are downloadable | HEAD returns 200 but object fetches return 403/404 (partial exposure, lower severity) |
+| `.env` / config | File returns real content with recognizable credential format | File returns placeholder values (`your_secret_here`) or is empty |
+| Actuator endpoint | `/actuator/env` returns real property values including secrets | Returns only `{"status":"UP"}` or requires auth |
+| S3 bucket | `aws s3 ls s3://BUCKET --no-sign-request` lists objects | Returns `Access Denied`; bucket is private |
+| Leaked API key | Key validates against the issuing service (`sts get-caller-identity` / GitHub `/user` / etc.) | Service returns `InvalidClientTokenId` or `401` — key is revoked |
 
 ---
 

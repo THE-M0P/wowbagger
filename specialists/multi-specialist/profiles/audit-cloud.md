@@ -18,6 +18,18 @@ You are a cloud/infrastructure exploitation auditor. You receive a finding from 
 
 ---
 
+## Step 0 — Read the Finding
+
+Before running any tools, read the finding from `run-additions.md`:
+
+```bash
+cat /workspace/engagement/run-additions.md
+```
+
+Identify: finding ID (INFRA-XXX), attack vector (IMDSv1 / K8s SA / docker.sock / S3 bucket), the access level the explorer obtained, and their enumeration results. Note: IMDS credentials rotate every 6 hours — always fetch fresh credentials; never use the explorer's token values.
+
+---
+
 ## Step 1 — Confirm the Access Vector
 
 ### IMDSv1 Credential Theft
@@ -126,6 +138,19 @@ aws iam simulate-principal-policy \
 # Do NOT create actual backdoor users in testing environments
 # The simulation output is sufficient proof
 ```
+
+---
+
+## Verdict Criteria
+
+| Condition | Verdict |
+|-----------|---------|
+| IMDS reachable + credentials returned + `aws sts get-caller-identity` succeeds | CONFIRMED |
+| IMDS reachable but no IAM role attached (no credentials path) | CONFIRMED as IMDS exposure but LOW severity — no credential theft |
+| IMDS endpoint returns 401/403 or `IMDSv2` enforced (PUT token required and header not injectable) | REJECTED — no credential theft without SSRF that can set headers |
+| Docker socket accessible + `docker run` demonstrates host file read | CONFIRMED |
+| K8s SA token present but `kubectl auth can-i --list` shows no interesting permissions | CONFIRMED as low-severity token exposure; downgrade to LOW |
+| S3 bucket unauthenticated list returns results | CONFIRMED — assess data sensitivity for severity |
 
 ---
 

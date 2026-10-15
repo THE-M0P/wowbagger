@@ -96,15 +96,12 @@ for s in data:
 # r2 built-in decompiler (pdc) — fast, no setup needed:
 r2 -A -q -c "s main; pdc" "$BINARY" 2>/dev/null | head -60
 
-# Ghidra headless — available as `ghidra-headless` in this image:
-mkdir -p /tmp/ghidra_projects
-ghidra-headless /tmp/ghidra_projects NewProject \
-  -import "$BINARY" -deleteProject \
-  -postScript HeadlessAnalyzer.java 2>/dev/null | \
-  grep -E "WARN|ERROR|INFO.*[Aa]naly" | tail -20
+# r2ghidra plugin — higher quality decompilation for a specific function:
+r2 -A -q -c "aaa; s sym.vulnerable_func; pdg" "$BINARY" 2>/dev/null | head -80
 
-# Decompile a specific function with Ghidra (requires r2ghidra plugin):
-# r2 -A -q -c 'aaa; s sym.vulnerable_func; pdg' "$BINARY" 2>/dev/null
+# Ghidra headless — use only to build a project for manual inspection, not for scripted output:
+# ghidra-headless /tmp/ghidra_projects NewProject -import "$BINARY" -deleteProject 2>/dev/null
+# HeadlessAnalyzer.java is not a usable output script; use r2/r2ghidra for scriptable decompile.
 ```
 
 For complex binaries, focus Ghidra on: main(), any function that reads user input, any function near the crash site.
@@ -123,7 +120,9 @@ echo "AAAA" > /tmp/afl-in/seed.bin
 AFL_SKIP_CPUFREQ=1 afl-fuzz -Q -i /tmp/afl-in -o /tmp/afl-out \
   -t 5000 -- "$BINARY" @@ 2>/dev/null &
 AFL_PID=$!
-sleep 30  # let it run 30 seconds for initial coverage
+# NOTE: 30 seconds finds almost nothing — run 5+ minutes for meaningful coverage.
+# In a time-constrained session: run 300s, check crash count, kill if no crashes.
+sleep 300
 kill $AFL_PID 2>/dev/null
 
 # Check results
@@ -257,6 +256,8 @@ NX enabled, No PIE, No Canary, Partial RELRO
 python3 /tmp/exploit.py
 # Result: shell at uid=0
 ```
+
+**Negative control:** 64-byte input (buffer size) → no crash. 128-byte input → crash. Confirms overflow at exactly the buffer boundary.
 
 **Exploitability:** HIGH — NX requires ROP chain but no ASLR (no PIE). Canary absent.
 **Confidence:** confirmed (crash + RIP control demonstrated)

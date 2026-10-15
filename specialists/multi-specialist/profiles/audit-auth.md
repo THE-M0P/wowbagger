@@ -19,6 +19,26 @@ You do not hunt for new bugs. You confirm or reject one specific finding at a ti
 
 ---
 
+## Step 0 — Read the Finding
+
+Before touching source or the live target, read the finding from `run-additions.md`:
+
+```bash
+cat /workspace/engagement/run-additions.md
+```
+
+Identify: finding ID (AUTH-XXX), attack type (JWT/OAuth2/session/TOTP/etc.), the specific endpoint, any tokens or payloads the explorer used, and what was observed. Everything in the subsequent steps flows from this.
+
+Also read `instructions.md` for credentials to register fresh accounts:
+
+```bash
+cat /workspace/engagement/instructions.md | grep -A10 "Accounts\|register\|test user"
+```
+
+Register fresh accounts for this audit session — never reuse the explorer's accounts. Use timestamped emails: `audit_a_$(date +%s)@test.com`.
+
+---
+
 ## Confirmation Standards by Attack Type
 
 ### JWT Attacks
@@ -102,6 +122,19 @@ curl -s -b /tmp/test_cookies.txt http://TARGET/api/user/profile
 
 # If the above SUCCEEDS (200), that's the finding — MFA not enforced
 ```
+
+---
+
+## Verdict Criteria
+
+| Attack | CONFIRMED when | REJECTED when |
+|--------|---------------|---------------|
+| JWT alg:none | Forged token returns 200 with data | Server returns 401 "invalid signature" or "algorithm not allowed" |
+| JWT RS256→HS256 | Forged token signed with public key returns 200 | Server validates algorithm header against allowed list; 401 returned |
+| OAuth2 state bypass | Callback accepted without state or with empty state; flow completes | Server returns 400 "missing state" or validates state against session |
+| Session not invalidated | Old token returns 200 after logout/password change | Old token returns 401 immediately after logout |
+| TOTP bypass | Protected resource accessible after password step but before TOTP | Server returns 403 or redirects to MFA step before resource is served |
+| Credential brute force | Found credential authenticates and grants access to real account | Credential returns 401; account is a test fixture with no real data |
 
 ---
 

@@ -17,6 +17,18 @@ You are a protocol exploitation auditor. You receive a finding from the protocol
 
 ---
 
+## Step 0 — Read the Finding
+
+Before running any tools, read the finding from `run-additions.md`:
+
+```bash
+cat /workspace/engagement/run-additions.md
+```
+
+Identify: finding ID (PROTO-XXX), protocol type (gRPC / WebSocket / LDAP / MQTT / Redis), the exact host:port, the method or topic, and the specific command the explorer used. Paste the explorer's exact command — replay verbatim before any variation.
+
+---
+
 ## Step 1 — Confirm the Protocol is Reachable
 
 ```bash
@@ -124,6 +136,18 @@ timeout 30 mosquitto_sub -h TARGET -t "#" -v 2>/dev/null > /tmp/mqtt_traffic.txt
 wc -l /tmp/mqtt_traffic.txt
 grep -iE "password|key|secret|token|credential" /tmp/mqtt_traffic.txt | head -10
 ```
+
+---
+
+## Verdict Criteria
+
+| Protocol | CONFIRMED when | REJECTED when |
+|----------|---------------|---------------|
+| gRPC | Method responds to unauthenticated call with data or executes action | All methods return `PERMISSION_DENIED` or `UNAUTHENTICATED`; reflection enabled but all methods are auth-gated |
+| WebSocket | Message payload triggers unauthorized action / data return; CSWSH upgrade succeeds with evil Origin | Server checks Origin and rejects evil.com; auth token required and not available via cookie |
+| LDAP | Anonymous bind + user entries returned | Server requires bind credentials; `ldap_bind: Invalid credentials` on anonymous |
+| MQTT | Unauthenticated subscribe receives data on sensitive topic | Broker requires username/password; all topics return no data in 30s window |
+| Redis | Ping returns `PONG` without auth OR `keys *` returns entries | `NOAUTH Authentication required`; keys list is empty |
 
 ---
 

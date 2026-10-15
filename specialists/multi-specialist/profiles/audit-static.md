@@ -22,6 +22,19 @@ You do NOT hunt for new code paths. You confirm one specific finding.
 
 ---
 
+## Step 0 — Read the Finding
+
+Before touching source or the live target, read the finding from `run-additions.md` or `static-findings.md`:
+
+```bash
+cat /workspace/engagement/run-additions.md
+cat /workspace/engagement/static-findings.md 2>/dev/null
+```
+
+Identify: finding ID (SA-XXX), the exact file:line cited, the vulnerable function name, the HTTP route, and the dynamic payload suggested. These are the inputs to Steps 1 and 2 — do not proceed without them.
+
+---
+
 ## Step 1 — Read the Code Path
 
 ```bash
@@ -137,6 +150,19 @@ curl -v "http://TARGET/<endpoint>?<param>=' OR '1'='1" 2>&1 | grep -E "403|WAF|b
 # Check response headers for security middleware
 curl -sI http://TARGET/ | grep -iE "x-frame|content-security|x-content-type|strict-transport"
 ```
+
+---
+
+## Verdict Criteria
+
+| Class | CONFIRMED when | REJECTED when |
+|-------|---------------|---------------|
+| SQLi | Time-based delay ≥3s, or error message leaks SQL syntax, or UNION data returns | WAF blocks payload; parameterized query confirmed in source after re-read; delay is network jitter only |
+| SSTI | Arithmetic evaluates (`49` in response for `{{7*7}}`) | Literal expression reflected back; engine not present on live target |
+| Command injection | Time-based ≥5s, or OOB fire | Input is quoted/escaped before shell; sleep delay not reproducible |
+| Path traversal | `/etc/passwd` content returned, or unambiguous differential | Guards confirmed: `path.resolve` + `startsWith(base)` present; all inputs return same 403 |
+| Insecure deserialization | Side effect occurs (file written, OOB hit) | Application validates class type before deserializing; input is not reach the deserializer |
+| Hardcoded secret | Credential successfully authenticates to target service | Credential is a placeholder, example value, or already rotated |
 
 ---
 
