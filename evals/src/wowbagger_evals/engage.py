@@ -1118,7 +1118,12 @@ def _coordinator_call(
         _log(f"coordinator LLM call failed: {exc} — treating as 'done'")
         return "done"
 
-    key = raw.strip().lower().split()[0].strip(".,;\"'") if raw.strip() else "done"
+    # Strip <think>...</think> blocks emitted by reasoning models (e.g. Qwen3)
+    # before extracting the specialist key — otherwise the first token is "<think>"
+    # which is never a valid specialist name and silently collapses to "done".
+    import re as _re
+    clean = _re.sub(r'<think>.*?</think>', '', raw, flags=_re.DOTALL).strip()
+    key = clean.lower().split()[0].strip(".,;\"'") if clean else "done"
     if key not in available and key != "done":
         _log(f"coordinator returned unknown key {key!r} (raw: {str(raw)[:80]!r}) — treating as 'done'")
         return "done"
