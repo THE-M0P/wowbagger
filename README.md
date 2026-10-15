@@ -121,10 +121,10 @@ The dashboard is a [Textual](https://github.com/Textualize/textual) TUI with a f
  WOWBAGGER  chain-001 — run-003-explore                         00:14:32
  Specialist 3: auth-specialist  Turn 47/120  Context ████████░░ 78%  ⟳
  ─────────────────────────────────────────────────────────────────────
- COORDINATOR              │ FINDINGS
- ✓ engagement-explore  12r│ ● Confirmed  2
- ✓ recon-specialist     8r│ ○ Anomalies  1
- → auth-specialist     47t│ ◌ Leads      4
+ COORDINATOR                    │ FINDINGS
+ ✓ engagement-explore      12r│ ● Confirmed  2
+ ✓ recon-specialist         8r│ ○ Anomalies  1
+ → auth-specialist  r3·specialist  47t│ ◌ Leads      4
  ─────────────────────────────────────────────────────────────────────
  T47  exec_command  1.2s
    curl -H "Authorization: Bearer eyJ..." /api/users/list
