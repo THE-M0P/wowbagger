@@ -61,5 +61,12 @@
     "description": "Deep reconnaissance: subdomain enumeration, certificate transparency, historical endpoints, hidden admin panels, stale routes",
     "covers": ["subdomain enumeration", "hidden/stale endpoints", "certificate transparency", "admin panel discovery", "JS analysis", "CVE mapping"],
     "triggers": "large or unclear attack surface, wildcard scope, incomplete surface coverage from explorer, stale endpoints suspected"
+  },
+  "injection": {
+    "explorer": "profiles/injection-specialist.md",
+    "auditor": "profiles/audit-injection.md",
+    "description": "Taint analysis: SSRF, SSTI, command injection, path traversal, open redirect — traces user-controlled data from entry points to dangerous sinks in source code",
+    "covers": ["SSRF (direct and stored)", "server-side template injection", "command injection", "path traversal", "open redirect", "second-order injection", "multi-hop taint flows"],
+    "triggers": "webhook or URL fields in user settings, template rendering, file download/upload endpoints, shell exec in codebase, URL validation code, user-configurable integration endpoints"
   }
 }
