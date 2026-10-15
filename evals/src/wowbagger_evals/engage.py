@@ -988,38 +988,60 @@ def _make_specialist_pack(base_pack: Path, specialist_key: str, entry: dict, tmp
     return pack_dir
 
 
+def _extract_leads_section(report: str) -> str:
+    """Return the content of the ## Leads section, or empty string if absent."""
+    import re
+    m = re.search(r'## Leads\n(.*?)(?=\n## |\Z)', report, re.DOTALL)
+    return m.group(1).strip() if m else ""
+
+
 def _build_coordinator_prompt(
     master_report: str,
     manifest: dict,
     available: list[str],
     exhausted: list[str],
 ) -> str:
+    leads = _extract_leads_section(master_report)
+    leads_block = (
+        f"Open leads from last specialist (highest priority routing signal):\n"
+        f"<leads>\n{leads}\n</leads>\n\n"
+    ) if leads else ""
+
     available_lines = "\n".join(
-        f"  {key}: {manifest[key]['description']}" for key in available
+        "  {key}: {desc}\n    covers: {covers}".format(
+            key=key,
+            desc=manifest[key]["description"],
+            covers=", ".join(manifest[key].get("covers", [])) or "see description",
+        )
+        for key in available
     )
     exhausted_str = ", ".join(exhausted) if exhausted else "none"
-    report_excerpt = master_report[:8000]
+
     return (
-        f"You are a security research coordinator deciding which specialist to run next.\n\n"
-        f"Current findings on the target:\n<findings>\n{report_excerpt}\n</findings>\n\n"
-        f"Specialists already exhausted (do NOT pick these): {exhausted_str}\n\n"
-        f"Available specialists:\n{available_lines}\n\n"
-        f"Pick ONE specialist key from the available list that is most likely to find a "
-        f"DIFFERENT class of vulnerability from what has already been found. "
-        f"If there are no findings yet, you MUST pick an exploration or recon specialist — "
-        f"never return 'done' when the engagement has not started. "
-        f"There are {len(available)} specialist(s) available that have NOT yet run — you should "
-        f"almost always pick one of them. Return 'done' ONLY if you are certain that every "
-        f"single remaining specialist would find nothing new on this specific target "
-        f"(not just more of the same class already found). "
-        f"Return ONLY the specialist key (e.g. \"auth\") or \"done\". One word, no explanation, no punctuation."
+        f"You are a security research coordinator deciding which specialist to run next "
+        f"on a penetration testing engagement.\n\n"
+        f"Specialists already run (do NOT pick these): {exhausted_str}\n\n"
+        f"{leads_block}"
+        f"Full engagement report (findings, ruled-out surfaces, open leads, session history):\n"
+        f"<report>\n{master_report}\n</report>\n\n"
+        f"Available specialists that have NOT yet run:\n{available_lines}\n\n"
+        f"Your task: identify which available specialist covers attack surfaces that have "
+        f"NOT yet been tested on this target. Match the open leads above to specialist "
+        f"coverage areas. Prioritise specialists whose 'covers' list overlaps with "
+        f"open leads or surfaces absent from the report's ruled-out list.\n\n"
+        f"There are {len(available)} specialist(s) available. You should almost always "
+        f"pick one — return 'done' ONLY if you can confirm that every remaining "
+        f"specialist's coverage area has already been fully tested on this target "
+        f"AND no open leads fall within any remaining specialist's domain.\n\n"
+        f"Return ONLY the specialist key (e.g. \"authz\") or \"done\". "
+        f"One word, no explanation, no punctuation."
     )
 
 
 def _llm_anthropic(model: str, prompt: str, api_key: str) -> str:
     body = json.dumps({
         "model": model,
-        "max_tokens": 20,
+        "max_tokens": 64,
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
     req = urllib.request.Request(
@@ -1041,7 +1063,7 @@ def _llm_openai_compat(model: str, prompt: str, api_base: str, api_key: str) -> 
     url = f"{api_base.rstrip('/')}/chat/completions"
     body = json.dumps({
         "model": model,
-        "max_tokens": 20,
+        "max_tokens": 64,
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
     req = urllib.request.Request(

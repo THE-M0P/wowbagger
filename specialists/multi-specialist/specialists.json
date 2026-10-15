@@ -3,54 +3,63 @@
     "explorer": "profiles/engagement-explore.md",
     "auditor": "profiles/audit-verify.md",
     "description": "Generic web surface exploration: routes, auth surface, business logic, IDOR, all attack classes",
+    "covers": ["general web surface", "auth surface mapping", "IDOR initial survey", "business logic", "all attack classes — generalist first pass"],
     "triggers": "always — run this first to map the surface before dispatching specialists"
   },
   "auth": {
     "explorer": "profiles/auth-specialist.md",
     "auditor": "profiles/audit-auth.md",
     "description": "Authentication attacks: JWT forgery, OAuth2 abuse, SAML bypass, MFA/TOTP bypass, session fixation, credential stuffing",
+    "covers": ["JWT/session tokens", "OAuth2/OIDC flows", "SAML", "MFA/TOTP bypass", "password reset flows", "credential attacks", "session fixation", "WebAuthn/passkeys"],
     "triggers": "login endpoints, JWT tokens, OAuth flows, session cookies, MFA, SSO, password reset"
   },
   "authz": {
     "explorer": "profiles/authz-specialist.md",
     "auditor": "profiles/audit-authz.md",
     "description": "Authorization and access control: IDOR, BOLA, privilege escalation, horizontal tenant isolation, role bypass",
+    "covers": ["IDOR/BOLA/BFLA", "horizontal tenant isolation", "privilege escalation", "mass assignment", "ownership checks", "role bypass", "cross-org write acceptance"],
     "triggers": "resource IDs in URLs or params, multi-tenant app, role-based access, ownership checks, admin endpoints"
   },
   "static": {
     "explorer": "profiles/static-analyst.md",
     "auditor": "profiles/audit-static.md",
     "description": "Static source code analysis: hardcoded secrets, unsafe deserialization, injection sinks, logic bugs, dependency CVEs",
+    "covers": ["hardcoded secrets", "unsafe deserialization", "injection sinks", "logic bugs", "dependency CVEs", "schema/doc mismatches", "code pattern analysis"],
     "triggers": "source code available, hardcoded credentials suspected, complex business logic, deserialization, dependency tree"
   },
   "binary": {
     "explorer": "profiles/binary-re.md",
     "auditor": "profiles/audit-binary.md",
     "description": "Binary reverse engineering: memory corruption, format string bugs, ROP chains, native code exploitation",
+    "covers": ["memory corruption", "format string bugs", "ROP chains", "buffer overflow", "native binary exploitation", "symbolic execution"],
     "triggers": "native binaries, C or C++ components, memory corruption indicators, CTF-style binary challenge, buffer overflow"
   },
   "cloud": {
     "explorer": "profiles/infra-cloud.md",
     "auditor": "profiles/audit-cloud.md",
     "description": "Cloud and infrastructure attacks: SSRF, metadata endpoint access, IAM misconfiguration, S3 ACL, container escape",
+    "covers": ["SSRF/metadata endpoints", "IAM misconfiguration", "S3 bucket ACL", "container escape", "cloud credential exposure", "K8s misconfig", "webhook SSRF"],
     "triggers": "cloud provider (AWS, GCP, Azure), SSRF surface, internal network reachable, container infrastructure, metadata endpoint"
   },
   "protocol": {
     "explorer": "profiles/protocol-explorer.md",
     "auditor": "profiles/audit-protocol.md",
     "description": "Non-HTTP protocol exploitation: gRPC, WebSocket, MQTT, Redis, custom binary protocols",
+    "covers": ["gRPC", "WebSocket/CSWSH", "MQTT", "Redis", "non-HTTP protocol exploitation", "protocol downgrade"],
     "triggers": "gRPC endpoints, WebSocket upgrade, non-HTTP ports, IoT or messaging protocols, protocol downgrade"
   },
   "llm": {
     "explorer": "profiles/llm-specialist.md",
     "auditor": "profiles/audit-llm.md",
     "description": "LLM-specific attacks: prompt injection, indirect injection via tool output, jailbreaks, model extraction, RAG poisoning",
+    "covers": ["prompt injection", "indirect injection via tool output", "MCP protocol attacks", "tool call abuse", "RAG poisoning", "model extraction", "LLM endpoint abuse"],
     "triggers": "LLM or AI features, chatbot, tool-calling agents, RAG pipeline, model API exposure, AI-generated content"
   },
   "recon": {
     "explorer": "profiles/recon-specialist.md",
     "auditor": "profiles/audit-recon.md",
     "description": "Deep reconnaissance: subdomain enumeration, certificate transparency, historical endpoints, hidden admin panels, stale routes",
+    "covers": ["subdomain enumeration", "hidden/stale endpoints", "certificate transparency", "admin panel discovery", "JS analysis", "CVE mapping"],
     "triggers": "large or unclear attack surface, wildcard scope, incomplete surface coverage from explorer, stale endpoints suspected"
   }
 }
