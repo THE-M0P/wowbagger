@@ -84,6 +84,20 @@ def _find_all_findings_sarifs(engagement_dir: Path) -> list[Path]:
     return found
 
 
+def _count_findings_from_report(engagement_dir: Path) -> dict[str, int] | None:
+    report = engagement_dir / "master-report.md"
+    if not report.is_file():
+        return None
+    try:
+        text = report.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    confirmed = len(re.findall(r'^#{1,4}\s*\[verified:', text, re.MULTILINE))
+    anomaly   = len(re.findall(r'^\s*-\s*\[anomaly-active\]', text, re.MULTILINE))
+    lead      = len(re.findall(r'^\s*-\s*\[lead\]', text, re.MULTILINE))
+    return {"confirmed": confirmed, "anomaly": anomaly, "lead": lead}
+
+
 def _count_findings(sarif_paths: list[Path]) -> dict[str, int]:
     confirmed = anomaly = lead = 0
     for p in sarif_paths:
@@ -146,8 +160,12 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         except ValueError:
             pass
 
-    sarifs = _find_all_findings_sarifs(engagement_dir)
-    state["findings"] = _count_findings(sarifs)
+    report_counts = _count_findings_from_report(engagement_dir)
+    if report_counts is not None:
+        state["findings"] = report_counts
+    else:
+        sarifs = _find_all_findings_sarifs(engagement_dir)
+        state["findings"] = _count_findings(sarifs)
 
     audit_files = _find_all_audit_jsonls(engagement_dir)
     if not audit_files:
