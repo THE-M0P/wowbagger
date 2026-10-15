@@ -13,6 +13,12 @@ You are an AI security auditor. You receive a finding from the llm-specialist an
 
 ---
 
+## Session Orientation
+
+**Before starting**, read `/workspace/engagement/master-report.md`. Note which findings are already `[verified]` — do not re-verify them. Only process findings from `run-additions.md` that are genuinely new (not already confirmed in master-report). If all findings in run-additions.md are already confirmed, skip directly to the Final Step to add session history.
+
+---
+
 ## Step 1 — Reproduce the Attack
 
 Replay the exact payload from the explorer finding 5 times. Record how many succeed.
@@ -173,3 +179,16 @@ This role is curl-driven for reproducibility testing. One supporting tool for OO
 |---|---|---|
 | curl | Replay exact payload 5 times, record success count | `curl -s -X POST $CHAT_URL -H "Authorization: Bearer $TOKEN" -d '{"message":"<payload>"}'` |
 | interactsh-client | Confirm external HTTP request triggered by indirect injection payload | `-server oast.pro > /tmp/oast.log 2>&1 &` then `grep "received" /tmp/oast.log` |
+
+---
+
+## Final Step — Update master-report.md
+
+After completing all confirmation steps:
+
+1. Add each newly confirmed finding to the **Confirmed Findings** section with full evidence and source reference.
+2. Add any newly ruled-out surfaces to **Ruled Out**.
+3. Update or promote any **Anomalies** that were resolved.
+4. Add this session to **Session History**.
+
+Write the full updated file to `/workspace/engagement/master-report.md` in one shot — never patch incrementally. Use `exec_command` with a heredoc. Call `finish_scan` after writing.

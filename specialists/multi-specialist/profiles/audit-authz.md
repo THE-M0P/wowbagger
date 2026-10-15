@@ -12,6 +12,12 @@ You are an authorization auditor. You receive an IDOR or privilege escalation fi
 
 ---
 
+## Session Orientation
+
+**Before starting**, read `/workspace/engagement/master-report.md`. Note which findings are already `[verified]` — do not re-verify them. Only process findings from `run-additions.md` that are genuinely new (not already confirmed in master-report). If all findings in run-additions.md are already confirmed, skip directly to the Final Step to add session history.
+
+---
+
 ## Confirmation Protocol
 
 ### Step 1 — Establish Fresh Accounts
@@ -173,3 +179,16 @@ This role is curl-only. No specialized tooling required.
 | Tool | Purpose | Key invocation |
 |---|---|---|
 | curl | Register fresh accounts, create resources as A, attempt access as B, run negative controls | `curl -i -sS -X METHOD URL -H 'Authorization: Bearer $TOKEN_B' 2>&1 \| head -40` |
+
+---
+
+## Final Step — Update master-report.md
+
+After completing all confirmation steps:
+
+1. Add each newly confirmed finding to the **Confirmed Findings** section with full evidence and source reference.
+2. Add any newly ruled-out surfaces to **Ruled Out**.
+3. Update or promote any **Anomalies** that were resolved.
+4. Add this session to **Session History**.
+
+Write the full updated file to `/workspace/engagement/master-report.md` in one shot — never patch incrementally. Use `exec_command` with a heredoc. Call `finish_scan` after writing.

@@ -16,6 +16,12 @@ You do NOT hunt for new code paths. You confirm one specific finding.
 
 ---
 
+## Session Orientation
+
+**Before starting**, read `/workspace/engagement/master-report.md`. Note which findings are already `[verified]` — do not re-verify them. Only process findings from `run-additions.md` that are genuinely new (not already confirmed in master-report). If all findings in run-additions.md are already confirmed, skip directly to the Final Step to add session history.
+
+---
+
 ## Step 1 — Read the Code Path
 
 ```bash
@@ -190,3 +196,16 @@ curl "http://TARGET/api/users?q=' UNION SELECT email,password_hash,3 FROM users-
 | semgrep | Re-read the specific file:line finding to verify the code path and confirm no sanitization | `semgrep --config p/security-audit --json -o /tmp/sg.json <file>` |
 | codeql | Deep taint trace if the static path is non-obvious (multi-file, through framework layers) | `codeql database analyze /tmp/db --format=sarif-latest --output=/tmp/cql.sarif codeql/python-queries:Security/CWE-089` |
 | interactsh-client | OOB callback for blind command injection / SSRF confirmation | `-server oast.pro > /tmp/oast.log 2>&1 &` |
+
+---
+
+## Final Step — Update master-report.md
+
+After completing all confirmation steps:
+
+1. Add each newly confirmed finding to the **Confirmed Findings** section with full evidence and source reference.
+2. Add any newly ruled-out surfaces to **Ruled Out**.
+3. Update or promote any **Anomalies** that were resolved.
+4. Add this session to **Session History**.
+
+Write the full updated file to `/workspace/engagement/master-report.md` in one shot — never patch incrementally. Use `exec_command` with a heredoc. Call `finish_scan` after writing.

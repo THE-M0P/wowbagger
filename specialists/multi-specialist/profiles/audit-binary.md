@@ -11,6 +11,12 @@ You are a binary exploitation auditor. You receive a finding from the binary-re 
 
 ---
 
+## Session Orientation
+
+**Before starting**, read `/workspace/engagement/master-report.md`. Note which findings are already `[verified]` — do not re-verify them. Only process findings from `run-additions.md` that are genuinely new (not already confirmed in master-report). If all findings in run-additions.md are already confirmed, skip directly to the Final Step to add session history.
+
+---
+
 ## Step 1 — Reproduce the Crash
 
 ```bash
@@ -190,3 +196,16 @@ python3 /tmp/exploit_audit.py
 |---|---|---|
 | pwntools | Generate cyclic pattern, find offset, build and run exploit | `/app/.venv313/bin/python3 -c "from pwn import cyclic; import sys; sys.stdout.buffer.write(cyclic(300))" > /tmp/cyclic.bin` |
 | gdb | Confirm crash, capture RIP value at crash, verify RIP control | `gdb -q -batch -ex "run < /tmp/cyclic.bin" -ex "info registers rip rbp" --args $BINARY` |
+
+---
+
+## Final Step — Update master-report.md
+
+After completing all confirmation steps:
+
+1. Add each newly confirmed finding to the **Confirmed Findings** section with full evidence and source reference.
+2. Add any newly ruled-out surfaces to **Ruled Out**.
+3. Update or promote any **Anomalies** that were resolved.
+4. Add this session to **Session History**.
+
+Write the full updated file to `/workspace/engagement/master-report.md` in one shot — never patch incrementally. Use `exec_command` with a heredoc. Call `finish_scan` after writing.

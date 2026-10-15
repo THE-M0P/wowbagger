@@ -13,6 +13,12 @@ You do not hunt for new bugs. You confirm or reject one specific finding at a ti
 
 ---
 
+## Session Orientation
+
+**Before starting**, read `/workspace/engagement/master-report.md`. Note which findings are already `[verified]` — do not re-verify them. Only process findings from `run-additions.md` that are genuinely new (not already confirmed in master-report). If all findings in run-additions.md are already confirmed, skip directly to the Final Step to add session history.
+
+---
+
 ## Confirmation Standards by Attack Type
 
 ### JWT Attacks
@@ -146,3 +152,16 @@ curl -H "Authorization: Bearer <forged_token>" http://TARGET/api/admin/users
 | curl | Replay explorer's exact HTTP proof steps | `curl -i -sS -X METHOD URL -H '...' -d '...' 2>&1 \| head -80` |
 | jwt_tool | Reproduce JWT attacks: alg:none, RS256→HS256 confusion, kid injection | `jwt_tool $ORIGINAL_TOKEN -X a` / `jwt_tool $TOKEN -X k -pk /tmp/pubkey.pem` |
 | interactsh-client | OOB callback for blind OAuth2 redirect token capture and blind SSRF in reset flows | `-server oast.pro > /tmp/oast.log 2>&1 &` |
+
+---
+
+## Final Step — Update master-report.md
+
+After completing all confirmation steps:
+
+1. Add each newly confirmed finding to the **Confirmed Findings** section with full evidence and source reference.
+2. Add any newly ruled-out surfaces to **Ruled Out**.
+3. Update or promote any **Anomalies** that were resolved.
+4. Add this session to **Session History**.
+
+Write the full updated file to `/workspace/engagement/master-report.md` in one shot — never patch incrementally. Use `exec_command` with a heredoc. Call `finish_scan` after writing.

@@ -14,6 +14,12 @@ Recon findings can become stale (CNAME gets fixed, bucket gets closed, secret ge
 
 ---
 
+## Session Orientation
+
+**Before starting**, read `/workspace/engagement/master-report.md`. Note which findings are already `[verified]` — do not re-verify them. Only process findings from `run-additions.md` that are genuinely new (not already confirmed in master-report). If all findings in run-additions.md are already confirmed, skip directly to the Final Step to add session history.
+
+---
+
 ## Exposed Sensitive Files
 
 ### .git Repository Exposure
@@ -190,3 +196,16 @@ DB_HOST = "prod-db.internal.target.com"
 | aws (aws-cli v2) | Confirm unauthenticated S3 bucket access, test read/write, validate leaked AWS keys | `aws s3 ls s3://BUCKET --no-sign-request` / `AWS_ACCESS_KEY_ID=$KEY aws sts get-caller-identity` |
 | trufflehog | Scan dumped .git repo or exposed filesystem for secrets | `filesystem /tmp/git-dump --json 2>/dev/null \| head -30` |
 | gitleaks | Cross-check dumped git history for credentials and API keys | `detect --source /tmp/git-dump --no-banner 2>/dev/null \| head -20` |
+
+---
+
+## Final Step — Update master-report.md
+
+After completing all confirmation steps:
+
+1. Add each newly confirmed finding to the **Confirmed Findings** section with full evidence and source reference.
+2. Add any newly ruled-out surfaces to **Ruled Out**.
+3. Update or promote any **Anomalies** that were resolved.
+4. Add this session to **Session History**.
+
+Write the full updated file to `/workspace/engagement/master-report.md` in one shot — never patch incrementally. Use `exec_command` with a heredoc. Call `finish_scan` after writing.
