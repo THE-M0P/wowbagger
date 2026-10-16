@@ -136,7 +136,7 @@ class IntegrationSettings(BaseSettings):
     model_config = _BASE_CONFIG
 
     searxng_url: str | None = Field(
-        default="http://10.10.30.20:8080",
+        default=None,
         alias="SEARXNG_URL",
     )
     searxng_timeout: int = Field(default=20, gt=0, alias="SEARXNG_TIMEOUT")
