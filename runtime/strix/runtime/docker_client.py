@@ -80,6 +80,8 @@ def _apply_sandbox_network(create_kwargs: dict[str, Any]) -> None:
     if network:
         create_kwargs["network"] = network
         create_kwargs.pop("ports", None)
+        if network == "host":
+            create_kwargs.pop("extra_hosts", None)
 
 
 def _apply_resource_limits(create_kwargs: dict[str, Any]) -> None:
