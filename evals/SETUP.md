@@ -7,8 +7,8 @@ Everything you need to go from zero to a running engagement.
 ## Prerequisites
 
 - **Docker** — the agent runs inside a Kali-based sandbox container
-- **Python 3.12+** — for the `engage` CLI
-- **strix** — the agent runtime that drives the LLM inside the sandbox (see below)
+- **Python 3.12+** — for the `engage` CLI and strix runtime
+- **Go 1.24+** — for the strix TUI sidecar (`go version` to check; install from [go.dev](https://go.dev/dl/))
 - **An LLM** — Anthropic API, OpenAI API, or a local model via a compatible server
 
 ---
