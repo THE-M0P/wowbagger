@@ -1227,9 +1227,9 @@ def run_orchestrate(args: argparse.Namespace) -> int:
                 _notify("Engage — orchestration complete", msg, notify)
                 return 0
 
-            # First iteration: --start-with overrides coordinator
+            # First iteration of this invocation: --start-with overrides coordinator
             start_with = getattr(args, "start_with", None)
-            if not state["exhausted"] and start_with:
+            if start_with and start_with not in state["exhausted"]:
                 if start_with not in manifest:
                     print(f"engage: unknown specialist {start_with!r}", file=sys.stderr)
                     return 2
