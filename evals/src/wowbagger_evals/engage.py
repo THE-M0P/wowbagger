@@ -995,44 +995,84 @@ def _extract_leads_section(report: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def _compute_coverage_gaps(
+    master_report: str,
+    manifest: dict,
+    available: list[str],
+) -> dict[str, list[str]]:
+    """Return untested covers items per available specialist.
+
+    A covers item is considered tested only if its full phrase appears verbatim
+    in the ruled-out section, or every significant word (>=5 chars) in it does.
+    Everything else is untested — the specialist still has value on this target.
+    """
+    import re
+    m = re.search(r'## Ruled Out\n(.*?)(?=\n## |\Z)', master_report, re.DOTALL)
+    ruled_out = m.group(1).lower() if m else ""
+
+    gaps: dict[str, list[str]] = {}
+    for key in available:
+        covers = manifest[key].get("covers", [])
+        untested = []
+        for cover in covers:
+            cover_lower = cover.lower()
+            if cover_lower in ruled_out:
+                continue
+            words = [w for w in re.split(r"\W+", cover_lower) if len(w) >= 5]
+            if words and all(w in ruled_out for w in words):
+                continue
+            untested.append(cover)
+        if untested:
+            gaps[key] = untested
+    return gaps
+
+
 def _build_coordinator_prompt(
     master_report: str,
     manifest: dict,
     available: list[str],
     exhausted: list[str],
 ) -> str:
+    import re as _re
     leads = _extract_leads_section(master_report)
     leads_block = (
-        f"Open leads from last specialist (highest priority routing signal):\n"
+        f"Open leads from last specialist:\n"
         f"<leads>\n{leads}\n</leads>\n\n"
     ) if leads else ""
 
-    available_lines = "\n".join(
-        "  {key}: {desc}\n    covers: {covers}".format(
-            key=key,
-            desc=manifest[key]["description"],
-            covers=", ".join(manifest[key].get("covers", [])) or "see description",
-        )
-        for key in available
-    )
+    gaps = _compute_coverage_gaps(master_report, manifest, available)
+
+    # Build the gap block: specialists with untested surfaces, sorted by most untested first
+    gap_lines = []
+    for key in sorted(gaps, key=lambda k: -len(gaps[k])):
+        untested_str = ", ".join(gaps[key])
+        desc = manifest[key].get("description", "")
+        gap_lines.append(f"  {key}: {untested_str}")
+    gap_block = (
+        "Pre-computed coverage gap — these specialists have surfaces NOT present in the "
+        "engagement's ruled-out list (i.e. untested on this target):\n"
+        + "\n".join(gap_lines)
+        + "\n\n"
+        "These are your primary candidates. Every specialist listed above still has "
+        "untested coverage on this target.\n\n"
+    ) if gap_lines else ""
+
     exhausted_str = ", ".join(exhausted) if exhausted else "none"
 
     return (
         f"You are a security research coordinator deciding which specialist to run next "
         f"on a penetration testing engagement.\n\n"
-        f"Specialists already run (do NOT pick these): {exhausted_str}\n\n"
+        f"Specialists already exhausted (do NOT pick these): {exhausted_str}\n\n"
+        f"{gap_block}"
         f"{leads_block}"
-        f"Full engagement report (findings, ruled-out surfaces, open leads, session history):\n"
+        f"Full engagement report (findings, ruled-out surfaces, session history — for context):\n"
         f"<report>\n{master_report}\n</report>\n\n"
-        f"Available specialists that have NOT yet run:\n{available_lines}\n\n"
-        f"Your task: identify which available specialist covers attack surfaces that have "
-        f"NOT yet been tested on this target. Match the open leads above to specialist "
-        f"coverage areas. Prioritise specialists whose 'covers' list overlaps with "
-        f"open leads or surfaces absent from the report's ruled-out list.\n\n"
-        f"There are {len(available)} specialist(s) available. You should almost always "
-        f"pick one — return 'done' ONLY if you can confirm that every remaining "
-        f"specialist's coverage area has already been fully tested on this target "
-        f"AND no open leads fall within any remaining specialist's domain.\n\n"
+        f"Pick the specialist from the untested coverage list above whose domain is most "
+        f"relevant to this target's confirmed stack and open leads. Prefer specialists "
+        f"whose untested surfaces overlap with confirmed findings or open leads.\n\n"
+        f"Return 'done' ONLY if the gap list above is empty AND every remaining "
+        f"specialist's domain is fully covered in the ruled-out list. "
+        f"With {len(available)} specialist(s) still available, 'done' should be rare.\n\n"
         f"Return ONLY the specialist key (e.g. \"authz\") or \"done\". "
         f"One word, no explanation, no punctuation."
     )
