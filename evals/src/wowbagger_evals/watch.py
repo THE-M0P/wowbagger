@@ -184,12 +184,17 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
         state["current_phase"] = "specialist" if m.group(2) == "explore" else "auditor"
         rounds_by = chain_state.get("rounds_by_specialist", {})
         exhausted_list = chain_state.get("exhausted", [])
-        exhausted_rounds = sum(v for k, v in rounds_by.items() if k in exhausted_list)
+        # rounds_by stores the last run-number when each specialist exhausted,
+        # not a round count — the current specialist started after the highest one.
+        last_exhausted_run = max(
+            (v for k, v in rounds_by.items() if k in exhausted_list),
+            default=0,
+        )
         explore_dirs = sum(
             1 for d in engagement_dir.iterdir()
             if re.match(r"run-\d+-explore$", d.name) and d.is_dir()
         )
-        state["specialist_round"] = max(1, explore_dirs - exhausted_rounds)
+        state["specialist_round"] = max(1, explore_dirs - last_exhausted_run)
 
     events = _read_jsonl(current_audit)
     if not events:
