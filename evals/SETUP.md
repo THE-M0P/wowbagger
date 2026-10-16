@@ -330,6 +330,22 @@ engage watch ~/engagements/myapp/chain-001
 
 ---
 
+## All flags
+
+Every flag for every command is documented in the CLI itself:
+
+```bash
+engage --help
+engage run --help
+engage orchestrate --help
+engage smoke --help
+engage watch --help
+```
+
+The flags that aren't self-explanatory (`--inject-header`, `--block-host`, `--scan-mode`, `--sandbox-network`, `--coordinator-llm`, `--start-with`) are explained in the examples sections of the README.
+
+---
+
 ## Minimal working config
 
 If you want the shortest possible config that works, here it is for Anthropic:
