@@ -183,7 +183,8 @@ def collect_state(engagement_dir: Path) -> dict[str, Any]:
     if m:
         state["current_phase"] = "specialist" if m.group(2) == "explore" else "auditor"
         rounds_by = chain_state.get("rounds_by_specialist", {})
-        exhausted_rounds = sum(rounds_by.values())
+        exhausted_list = chain_state.get("exhausted", [])
+        exhausted_rounds = sum(v for k, v in rounds_by.items() if k in exhausted_list)
         explore_dirs = sum(
             1 for d in engagement_dir.iterdir()
             if re.match(r"run-\d+-explore$", d.name) and d.is_dir()
@@ -370,7 +371,7 @@ def _render_status(state: dict[str, Any]) -> Any:
         grid.add_column(ratio=1)
 
         coord = Text()
-        coord.append("COORDINATOR\n", style="bold white")
+        coord.append("SPECIALISTS\n", style="bold white")
         for sp in exhausted:
             r = rounds_by.get(sp, "?")
             coord.append("✓ ", style="bold green")
