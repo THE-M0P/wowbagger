@@ -13,30 +13,28 @@ Everything you need to go from zero to a running engagement.
 
 ---
 
-## 1. Get strix
+## 1. Clone wowbagger
 
-Strix is the agent runtime. `engage` shells out to it for every run.
-
-**Option A — install from PyPI (if available for your version):**
 ```bash
-pip install strix-agent
+git clone https://github.com/THE-M0P/wowbagger ~/src/wowbagger
 ```
 
-**Option B — install from a local checkout:**
+---
+
+## 2. Install strix
+
+The repo ships a patched strix runtime under `runtime/`. Install it from there — **do not** use `pip install strix-agent` from PyPI, that version is missing features engage depends on.
+
 ```bash
-pip install -e ~/src/strix/
+pip install -e ~/src/wowbagger/runtime/
 ```
 
-After installing, verify it's on your PATH:
+Verify it's on your PATH:
 ```bash
 strix --version
 ```
 
 If it prints a version you're good. If not, note the full path to the binary — you'll need it for config.
-
----
-
-## 2. Clone wowbagger
 
 ```bash
 git clone https://github.com/THE-M0P/wowbagger ~/src/wowbagger
@@ -93,7 +91,7 @@ Path to the strix binary. Skip this if `strix` is already in your PATH.
 ```toml
 strix = "~/.local/bin/strix"
 # or wherever pip installed it:
-strix = "~/src/strix/.venv/bin/strix"
+strix = "~/src/wowbagger/runtime/.venv/bin/strix"
 ```
 
 ---
