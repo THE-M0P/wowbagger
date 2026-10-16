@@ -165,6 +165,15 @@ class StrixDockerSandboxSession(DockerSandboxSession):
     sandbox_network: str = ""
 
     async def _resolve_exposed_port(self, port: int) -> ExposedPortEndpoint:
+        # network_mode=host containers share the host's network namespace
+        # directly, so there is no per-container IP to resolve — the port
+        # the service binds to inside the container *is* the host port.
+        # The generic lookup below expects NetworkSettings.Networks["host"]
+        # to carry an IPAddress, which Docker never populates for host-mode
+        # containers, so it always raised container_not_on_network here.
+        if self.sandbox_network == "host":
+            return ExposedPortEndpoint(host="127.0.0.1", port=port, tls=False)
+
         try:
             self._container.reload()
         except docker_errors.APIError as e:
