@@ -207,7 +207,7 @@ curl -s -H "Authorization: Bearer $TOKEN_B" http://TARGET/api/projects/$RESOURCE
 **Expected:** 403 Forbidden
 **Actual:** 200 with full project data belonging to Account A
 
-**Negative control:** unauthenticated GET /api/projects/$RESOURCE_ID → 401 (confirms auth IS checked, but not ownership)
+**Negative control:** unauthenticated GET /api/projects/$RESOURCE_ID → 401 (baseline confirms auth IS enforced but ownership is not — rules out a missing-auth false positive)
 
 **Impact:** Any authenticated user can read all other users' <resource>. In a multi-tenant context this constitutes full tenant isolation failure.
 **Confidence:** confirmed
