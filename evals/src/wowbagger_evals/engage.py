@@ -211,7 +211,15 @@ def _is_dry_run(engagement_dir: Path) -> bool:
     additions = engagement_dir / "run-additions.md"
     if not additions.is_file():
         return False
-    return "[pending-audit]" not in additions.read_text(encoding="utf-8")
+    text = additions.read_text(encoding="utf-8")
+    # Ignore unfilled template placeholder headings — only real entries count.
+    real_entries = [
+        line for line in text.splitlines()
+        if "[pending-audit]" in line
+        and "Finding Title Here" not in line
+        and "Anomaly Title Here" not in line
+    ]
+    return len(real_entries) == 0
 
 
 # ---------------------------------------------------------------------------
